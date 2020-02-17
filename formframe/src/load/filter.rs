@@ -1,4 +1,5 @@
 use {
+    super::error::LoadError,
     crate::graph::Node,
     generational_arena::{Arena, Index},
     regex::Regex,
@@ -16,7 +17,7 @@ pub struct FilterSet {
 }
 
 impl FilterSet {
-    pub fn try_new<R>(data: R) -> Result<Self, Box<dyn error::Error>>
+    pub fn try_new<R>(data: R) -> Result<Self, LoadError>
     where
         R: io::Read,
     {
@@ -26,15 +27,7 @@ impl FilterSet {
 
         wrap.filter.into_iter().try_for_each(|(name, seeds)| {
             set.insert(name.clone(), init_tree(&mut store, seeds))
-                .map_or_else(
-                    || Ok(()),
-                    |_| {
-                        Err(
-                            Box::from(format!("Error! Duplicate top level regex name: {}", name))
-                                as Box<dyn error::Error>,
-                        )
-                    },
-                )
+                .map_or_else(|| Ok(()), |_| Err(LoadError::DuplicateRootName(name)))
         })?;
 
         Ok(Self {
