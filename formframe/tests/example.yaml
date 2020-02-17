@@ -1,0 +1,76 @@
+config:
+  some_option: 42
+filter:
+  number: 
+    - re: '^\d+$'
+  date:
+    - any: 
+        - re: ^\d{4}[-/]\d{2}[-/]\d{2}$
+        - re: ^\d{2}[-/]\d{2}[-/]\d{4}$
+  complex: #0
+    - all: #1
+        - any: #2
+          - re: ^\W$ #3
+          - re: ^\d+-\W$ #3
+        - not: #2
+          - any: #3
+              - re: ^42-\W$ #4
+              - re: ^69-\W$ #4
+  greeting:
+    - any:
+      - re: '(?i)hello\s+\w'
+      - re: '(?i)hi\s+\w'
+map:
+  some_map: "..."
+execute:
+  - match: pytest
+    on: source
+    find: complex
+    do:
+      - complex
+      - some_map
+      - date
+      - some_map
+  - match: samba
+    on: source
+    find: date
+    do:
+      - "..."
+  - match: junit
+    on: data
+    re: "^*.junit"
+    then:
+      - complex
+
+# Starting with complex
+# 00. Allocate ROOT node: edges: unknown, and store index (somewhere)                                                 | LVL 0
+# 01. Descend into children... <RECURSE HERE>                                                                         | LVL 0__
+# 02. Found AND node, edges unknown => allocate a node and store index (LVL0 scope)                                           | LVL 1
+# 03. Descend into children... <RECURSE HERE>                                                                                 | LVL 1__
+# 04. Found OR node, edges unknown => allocate a node and store index (LVL1 scope)                                                    | LVL 2
+# 05. Descend into children... <RECURSE HERE>                                                                                         | LVL 2__
+# 06. Found RX node (^\W$), edges known: 0 => allocate a node and store index (LVL2 scope)                                                    | LVL 3
+# 07. Found RX node (^\d+-\W$), edges known: 0 => allocate a node and store index (LVL2 scope)                                                | LVL 3
+# 08. No more children <RETURN HERE>                                                                                                        __| LVL 3
+# 09. OR from '4.' edges known: 2 => associate children with node <RETURN HERE>                                                       | LVL 2
+# 10. Found NOT node, edges unknown => set 'not' = true                                                                               | LVL 2
+# 11. Descend into children... <RECURSE HERE> <NOT = TRUE>                                                                            | LVL 2__
+# 12. Found OR node, edges unknown => allocate a node and store index (LVL2 scope) <NOT = TRUE>                                               | LVL 3
+# 13. Descend into children... <RECURSE HERE> <NOT = TRUE>                                                                                    | LVL 3__
+# 14. Found RX node (^42-\W$), edges known: 0 => allocate a node and store index (LVL3 scope) <NOT = TRUE>                                            | LVL 4
+# 15. Found RX node (^69-\W$), edges known: 0 => allocate a node and store index (LVL3 scope) <NOT = TRUE>                                            | LVL 4
+# 16. No more children <RETURN HERE> <NOT = TRUE>                                                                                                   __| LVL 4
+# 17. OR from '12.' edges known: 2 => associate children with node <RETURN HERE> <NOT = TRUE>                                                 | LVL 3
+# 18. No more children <RETURN HERE> <NOT = TRUE>                                                                                           __| LVL 3
+# 19. No more children <RETURN HERE>                                                                                                __| LVL 2
+# 20. No more children <RETURN HERE>                                                                                          | LVL 1
+# 21. Found RX node (stupid), edges known: 0 => allocate a node and store index (LVL0 scope)                                  | LVL 1
+# 22. No more children <RETURN HERE>                                                                                        __| LVL 1
+# 23. ROOT node from '00.' edges known: 2 => associate children with node <RETURN HERE>                               | LVL 0
+#
+# IF filter.name.values = 0
+#   name = ROOT (default)
+# ELSE IF filter.name.values = 1
+#   values = ROOT (values->...)
+# ELSE
+#   name = ROOT (name->values->...)

@@ -1,0 +1,4 @@
+[workspace]
+members = [ "formframe", "loopframe", "skipframe", "serde_interface" ]
+default-members = [ "formframe", "loopframe", "skipframe", "serde_interface" ]
+
