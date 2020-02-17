@@ -1,20 +1,31 @@
 use {
     crate::{
         cli::{generate_cli, ProgramArgs},
-        load::filter::{is_match, FilterSet},
-        prelude::*,
+        error::MainResult,
+        load::filter::is_match,
+        models::{check_args, init_logging},
+        prelude::{CrateResult as Result, *},
     },
     lazy_static::lazy_static,
-    std::sync::Arc,
 };
 
 mod cli;
 mod error;
 mod graph;
 mod load;
+mod models;
 
 mod prelude {
-    pub use crate::error::{CrateError, Result};
+    pub use {
+        crate::{
+            cli, enter,
+            error::{CrateError, CrateResult},
+        },
+        tracing::{
+            debug, debug_span, error, error_span as always_span, info, info_span, instrument,
+            trace, trace_span, warn,
+        },
+    };
 }
 
 lazy_static! {
@@ -29,14 +40,28 @@ macro_rules! cli {
     }};
 }
 
+#[macro_export]
+macro_rules! enter {
+    ($span:expr) => {
+        let span = $span;
+        let _grd = span.enter();
+    };
+}
+
 fn main() {
+    init_logging();
+
     if let Err(e) = try_main() {
         eprintln!("Fatal: {}", e)
     }
 }
 
-fn try_main() -> Result<()> {
+fn try_main() -> MainResult<()> {
+    let span = always_span!("main");
+    let _grd = span.enter();
+
     check_args()?;
+    info!("Program Args loaded");
 
     let data = read_from(cli!().get_input())?;
 
@@ -68,13 +93,5 @@ fn read_from(source: Option<&std::path::Path>) -> Result<String> {
             .and_then(|mut f| f.read_to_string(&mut s))
             .map(|_| s)
             .map_err(|e| e.into()),
-    }
-}
-
-fn check_args() -> Result<()> {
-    let args = ARGS.as_ref();
-    match args {
-        Ok(_) => Ok(()),
-        Err(e) => Err(e.into()),
     }
 }

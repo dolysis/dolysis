@@ -3,14 +3,13 @@ use {
     crate::{
         error::{CfgErrSubject as Subject, ConfigError},
         load::filter::FilterSet,
-        prelude::*,
+        models::SpanDisplay,
+        prelude::{CrateResult as Result, *},
     },
     clap::{crate_authors, crate_version, App, Arg, ArgSettings},
     std::{
-        error,
         fs::File,
         path::{Path, PathBuf},
-        sync::Arc,
     },
 };
 
@@ -57,7 +56,8 @@ impl ProgramArgs {
     }
 
     pub fn try_init(cli: App<'_, '_>) -> Result<Self> {
-        Self::__try_init(cli).map_err(|b| b.into())
+        enter!(always_span!("init.cli"));
+        Self::__try_init(cli)
     }
 
     fn __try_init(cli: App<'_, '_>) -> Result<Self> {
@@ -71,6 +71,8 @@ impl ProgramArgs {
             })
             .unwrap();
 
+        trace!(source = %input_type.span_display(), "Reading input from...");
+
         let mut filter = DataInit::Filter(None);
 
         store.values_of("config-file").map(|iter| {
@@ -78,7 +80,11 @@ impl ProgramArgs {
             // these files are all the required config options. Which means that if we can't open a file,
             // or if the file is invalid yaml we shouldn't give up because other files may contain the
             // information we need
-            iter.map(|s| File::open(s)).try_for_each(|res| match res {
+            iter.map(|s| {
+                enter!(debug_span!("load config", file = s));
+                File::open(s)
+            })
+            .try_for_each(|res| match res {
                 Ok(f) => {
                     FilterSet::try_new(f)
                         .map_err(|e| ConfigError::Other(e).into())
@@ -120,6 +126,15 @@ impl ProgramArgs {
 enum DebugInputKind {
     Stdin,
     File(PathBuf),
+}
+
+impl SpanDisplay for DebugInputKind {
+    fn span_output(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Stdin => write!(f, "stdin"),
+            Self::File(path) => write!(f, "{}", path.display()),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -174,7 +189,7 @@ impl DataInit {
     fn into_filter(self) -> Option<FilterSet> {
         match self {
             Self::Filter(o) => o,
-            _ => None,
+            //_ => None,
         }
     }
 }
