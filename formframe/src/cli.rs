@@ -1,6 +1,10 @@
 #![allow(deprecated)]
 use {
-    crate::load::filter::FilterSet,
+    crate::{
+        error::{CfgErrSubject as Subject, ConfigError},
+        load::filter::FilterSet,
+        prelude::*,
+    },
     clap::{crate_authors, crate_version, App, Arg, ArgSettings},
     std::{
         error,
@@ -52,11 +56,11 @@ impl ProgramArgs {
         Self::try_init(cli).unwrap()
     }
 
-    pub fn try_init(cli: App<'_, '_>) -> Result<Self, Arc<dyn error::Error + Send + Sync>> {
+    pub fn try_init(cli: App<'_, '_>) -> Result<Self> {
         Self::__try_init(cli).map_err(|b| b.into())
     }
 
-    fn __try_init(cli: App<'_, '_>) -> Result<Self, Box<dyn error::Error + Send + Sync>> {
+    fn __try_init(cli: App<'_, '_>) -> Result<Self> {
         let store = cli.get_matches();
 
         let input_type = store
@@ -67,7 +71,7 @@ impl ProgramArgs {
             })
             .unwrap();
 
-        let mut filter = None;
+        let mut filter = DataInit::Filter(None);
 
         store.values_of("config-file").map(|iter| {
             // We allow the user to specify multiple files with a requirement that somewhere in
@@ -76,7 +80,9 @@ impl ProgramArgs {
             // information we need
             iter.map(|s| File::open(s)).try_for_each(|res| match res {
                 Ok(f) => {
-                    FilterSet::try_new(f).and_then(|fset| checked_set(&mut filter, fset))
+                    FilterSet::try_new(f)
+                        .map_err(|e| ConfigError::Other(e).into())
+                        .and_then(|fset| filter.checked_set(DataInit::from(fset)))
                     // MapSet::try_new()
                     // TransformSet::try_new()
                     // etc...
@@ -88,13 +94,13 @@ impl ProgramArgs {
 
         // When we implement more objects it will be filter.and(...).and(...)...is_some()
         // Check to make sure we have all the required information
-        if filter.is_some() {
+        if filter.is_set() {
             Ok(Self {
-                filter: filter.unwrap(),
+                filter: filter.into_filter().unwrap(),
                 input_type,
             })
         } else {
-            Err(format!("Missing mandatory config information...").into())
+            Err(ConfigError::Missing(Subject::Filter).into())
         }
     }
 
@@ -110,16 +116,65 @@ impl ProgramArgs {
     }
 }
 
-fn checked_set<T>(store: &mut Option<T>, value: T) -> Result<(), Box<dyn error::Error>> {
-    if store.is_none() {
-        *store = Some(value);
-        Ok(())
-    } else {
-        Err(format!("Duplicate config value").into())
-    }
-}
-
+#[derive(Debug)]
 enum DebugInputKind {
     Stdin,
     File(PathBuf),
+}
+
+#[derive(Debug)]
+enum DataInit {
+    Filter(Option<FilterSet>),
+}
+
+impl From<FilterSet> for DataInit {
+    fn from(set: FilterSet) -> Self {
+        Self::Filter(Some(set))
+    }
+}
+
+impl Into<Subject> for &DataInit {
+    fn into(self) -> Subject {
+        match self {
+            DataInit::Filter(_) => Subject::Filter,
+        }
+    }
+}
+
+impl DataInit {
+    fn and(&self, other: Self) -> Option<()> {
+        match (self.is_set(), other.is_set()) {
+            (true, true) => Some(()),
+            (_, _) => None,
+        }
+    }
+
+    fn is_set(&self) -> bool {
+        !self.is_empty()
+    }
+
+    fn is_empty(&self) -> bool {
+        match self {
+            DataInit::Filter(o) => o.is_none(),
+        }
+    }
+
+    fn checked_set<T>(&mut self, value: T) -> Result<()>
+    where
+        T: Into<DataInit>,
+    {
+        if self.is_empty() {
+            *self = value.into();
+            Ok(())
+        } else {
+            // Lotta intos: T -> DataInit -> &DataInit -> Subject -> CrateError
+            Err(ConfigError::Duplicate((&value.into()).into()).into())
+        }
+    }
+    fn into_filter(self) -> Option<FilterSet> {
+        match self {
+            Self::Filter(o) => o,
+            _ => None,
+        }
+    }
 }

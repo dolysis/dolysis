@@ -2,18 +2,23 @@ use {
     crate::{
         cli::{generate_cli, ProgramArgs},
         load::filter::{is_match, FilterSet},
+        prelude::*,
     },
     lazy_static::lazy_static,
     std::sync::Arc,
 };
 
 mod cli;
+mod error;
 mod graph;
 mod load;
 
+mod prelude {
+    pub use crate::error::{CrateError, Result};
+}
+
 lazy_static! {
-    pub static ref ARGS: Result<ProgramArgs, Arc<dyn std::error::Error + Send + Sync>> =
-        ProgramArgs::try_init(generate_cli());
+    pub static ref ARGS: Result<ProgramArgs> = ProgramArgs::try_init(generate_cli());
 }
 
 #[macro_export]
@@ -30,11 +35,8 @@ fn main() {
     }
 }
 
-fn try_main() -> Result<(), Box<dyn std::error::Error>> {
-    match check_args() {
-        Ok(_) => (),
-        Err(e) => return Err(format!("{}", e).into()),
-    };
+fn try_main() -> Result<()> {
+    check_args()?;
 
     let data = read_from(cli!().get_input())?;
 
@@ -53,7 +55,7 @@ fn try_main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn read_from(source: Option<&std::path::Path>) -> Result<String, Box<dyn std::error::Error>> {
+fn read_from(source: Option<&std::path::Path>) -> Result<String> {
     use std::io::Read;
     let mut s = String::new();
 
@@ -69,10 +71,10 @@ fn read_from(source: Option<&std::path::Path>) -> Result<String, Box<dyn std::er
     }
 }
 
-fn check_args() -> Result<(), Arc<dyn std::error::Error>> {
+fn check_args() -> Result<()> {
     let args = ARGS.as_ref();
     match args {
         Ok(_) => Ok(()),
-        Err(e) => Err(Arc::clone(e) as Arc<dyn std::error::Error>),
+        Err(e) => Err(e.into()),
     }
 }
