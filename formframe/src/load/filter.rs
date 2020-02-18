@@ -58,9 +58,9 @@ pub fn serial_traverse(
     match data.ty {
         // Run regex
         NodeType::Regex(ref rx) => {
-            let b = rx.is_match(text);
-            println!("RX: {}, = {}", rx, b.negate(data.negate));
-            b.negate(data.negate)
+            let b = rx.is_match(text).negate(data.negate);
+            debug!(regex = %rx, negate = data.negate.as_bool(), matched = b);
+            b
         }
         // Wait for all success / return on first error
         NodeType::And => {
@@ -220,6 +220,12 @@ pub enum NodeType {
 pub enum BoolExt {
     True = 1,
     False = 0,
+}
+
+impl BoolExt {
+    fn as_bool(&self) -> bool {
+        (*self).into()
+    }
 }
 
 impl From<bool> for BoolExt {

@@ -48,21 +48,16 @@ macro_rules! enter {
     };
 }
 
-fn main() {
+fn main() -> MainResult<()> {
     init_logging();
+    check_args()?;
+    enter!(always_span!("main"));
+    info!("Program Args loaded");
 
-    if let Err(e) = try_main() {
-        eprintln!("Fatal: {}", e)
-    }
+    try_main()
 }
 
 fn try_main() -> MainResult<()> {
-    let span = always_span!("main");
-    let _grd = span.enter();
-
-    check_args()?;
-    info!("Program Args loaded");
-
     let data = read_from(cli!().get_input())?;
 
     cli!().get_filter().access_set(|arena, set| {
