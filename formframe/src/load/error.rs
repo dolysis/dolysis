@@ -15,10 +15,8 @@ where
     E: Into<Err>,
 {
     fn from(err: E) -> Self {
-        let err = err.into();
-        error!(kind = %err.categorize().span_display(), message = %err);
         Self {
-            inner: Box::new(err),
+            inner: Box::new(err.into()),
         }
     }
 }

@@ -76,25 +76,23 @@ impl ProgramArgs {
         let mut filter = DataInit::Filter(None);
 
         store.values_of("config-file").map(|iter| {
+            enter!(span, debug_span!("cfg.load", file = ""));
             // We allow the user to specify multiple files with a requirement that somewhere in
             // these files are all the required config options. Which means that if we can't open a file,
             // or if the file is invalid yaml we shouldn't give up because other files may contain the
             // information we need
             iter.map(|s| {
-                enter!(debug_span!("load config", file = s));
+                span.record("file", &s);
                 File::open(s)
             })
-            .try_for_each(|res| match res {
-                Ok(f) => {
-                    FilterSet::try_new(f)
-                        .map_err(|e| ConfigError::Other(e).into())
-                        .and_then(|fset| filter.checked_set(DataInit::from(fset)))
-                    // MapSet::try_new()
-                    // TransformSet::try_new()
-                    // etc...
-                }
-                // TODO: Once logging implemented log e
-                Err(_e) => Ok(()),
+            .try_for_each(|res| {
+                res.map_err(|e| e.into())
+                    .and_then(|ref f| {
+                        FilterSet::try_new(f)
+                            .map_err(|e| ConfigError::Other(e).into())
+                            .and_then(|fset| filter.checked_set(DataInit::from(fset)))
+                    })
+                    .log(Level::WARN)
             })
         });
 
@@ -106,7 +104,7 @@ impl ProgramArgs {
                 input_type,
             })
         } else {
-            Err(ConfigError::Missing(Subject::Filter).into())
+            Err(ConfigError::Missing(Subject::Filter).into()).log(Level::ERROR)
         }
     }
 
@@ -119,6 +117,11 @@ impl ProgramArgs {
             DebugInputKind::Stdin => None,
             DebugInputKind::File(ref p) => Some(p.as_ref()),
         }
+    }
+
+    // TODO: replace with user arg when implementing tcp/unix subcommand
+    pub fn bind_addr(&self) -> &str {
+        "127.0.0.1:8080"
     }
 }
 

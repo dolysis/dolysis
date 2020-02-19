@@ -1,11 +1,38 @@
 use {
-    crate::{load::error::LoadError, models::SpanDisplay, prelude::error},
+    crate::{
+        load::error::LoadError,
+        models::SpanDisplay,
+        prelude::{debug, error, info, trace, warn},
+    },
     std::{error, fmt, io::Error as IoError},
     thiserror::Error,
 };
 
 pub type CrateResult<T> = std::result::Result<T, CrateError>;
 pub type MainResult<T> = std::result::Result<T, RefError>;
+
+// #[macro_export]
+// macro_rules! elog {
+//     (none, $err:expr) => {{
+//         use crate::error::NoLog;
+//         NoLog::from($err)
+//     }};
+//     (trace, $err:expr) => {
+//         ($err, Some(tracing::Level::TRACE)).into()
+//     };
+//     (debug, $err:expr) => {
+//         ($err, Some(tracing::Level::DEBUG)).into()
+//     };
+//     (info, $err:expr) => {
+//         ($err, Some(tracing::Level::INFO)).into()
+//     };
+//     (warn, $err:expr) => {
+//         ($err, Some(tracing::Level::WARN)).into()
+//     };
+//     (error, $err:expr) => {
+//         ($err, Some(tracing::Level::ERROR)).into()
+//     };
+// }
 
 #[derive(Debug)]
 pub struct CrateError {
@@ -17,10 +44,8 @@ where
     E: Into<Err>,
 {
     fn from(err: E) -> Self {
-        let err = err.into();
-        error!(kind = %err.categorize().span_display(), message = %err);
         Self {
-            inner: Box::new(err),
+            inner: Box::new(err.into()),
         }
     }
 }
@@ -148,5 +173,42 @@ impl fmt::Display for CfgErrSubject {
         };
 
         write!(f, "{}", o)
+    }
+}
+
+pub trait LogError {
+    //type RetVal;
+    fn log(self, level: tracing::Level) -> Self;
+}
+
+impl<T> LogError for CrateResult<T> {
+    fn log(self, level: tracing::Level) -> Self {
+        match self {
+            ok @ Ok(_) => ok,
+            Err(e) => Err(e.log(level)),
+        }
+    }
+}
+
+impl LogError for CrateError {
+    fn log(self, level: tracing::Level) -> Self {
+        match level {
+            tracing::Level::ERROR => {
+                error!(kind = %self.inner.categorize().span_display(), message = %self.inner)
+            }
+            tracing::Level::WARN => {
+                warn!(kind = %self.inner.categorize().span_display(), message = %self.inner)
+            }
+            tracing::Level::INFO => {
+                info!(kind = %self.inner.categorize().span_display(), message = %self.inner)
+            }
+            tracing::Level::DEBUG => {
+                debug!(kind = %self.inner.categorize().span_display(), message = %self.inner)
+            }
+            tracing::Level::TRACE => {
+                trace!(kind = %self.inner.categorize().span_display(), message = %self.inner)
+            }
+        }
+        self
     }
 }

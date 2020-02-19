@@ -4,6 +4,8 @@ use {
     tracing_subscriber::{EnvFilter, FmtSubscriber},
 };
 
+pub mod tcp;
+
 /// Initialize the global logger. This function must be called before ARGS is initialized,
 /// otherwise logs generated during CLI parsing will be silently ignored
 pub fn init_logging() {

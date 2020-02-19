@@ -191,6 +191,8 @@ dependencies = [
  "rayon",
  "regex",
  "serde",
+ "serde_cbor",
+ "serde_interface",
  "serde_yaml",
  "smallvec",
  "thiserror",

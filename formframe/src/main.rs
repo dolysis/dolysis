@@ -3,10 +3,11 @@ use {
         cli::{generate_cli, ProgramArgs},
         error::MainResult,
         load::filter::is_match,
-        models::{check_args, init_logging},
+        models::{check_args, init_logging, tcp::listener},
         prelude::{CrateResult as Result, *},
     },
     lazy_static::lazy_static,
+    tracing_futures::Instrument,
 };
 
 mod cli;
@@ -19,11 +20,11 @@ mod prelude {
     pub use {
         crate::{
             cli, enter,
-            error::{CrateError, CrateResult},
+            error::{CrateError, CrateResult, LogError},
         },
         tracing::{
             debug, debug_span, error, error_span as always_span, info, info_span, instrument,
-            trace, trace_span, warn,
+            trace, trace_span, warn, Level,
         },
     };
 }
@@ -46,6 +47,10 @@ macro_rules! enter {
         let span = $span;
         let _grd = span.enter();
     };
+    ($var:ident, $span:expr) => {
+        let $var = $span;
+        let _grd = $var.enter();
+    };
 }
 
 fn main() -> MainResult<()> {
@@ -54,12 +59,9 @@ fn main() -> MainResult<()> {
     enter!(always_span!("main"));
     info!("Program Args loaded");
 
-    try_main()
-}
+    //try_main().map_err(|e| e.into())
 
-fn try_main() -> MainResult<()> {
     let data = read_from(cli!().get_input())?;
-
     cli!().get_filter().access_set(|arena, set| {
         println!("Using '{}' as the data...", &data);
         for (name, root) in set.iter() {
@@ -73,6 +75,14 @@ fn try_main() -> MainResult<()> {
     });
 
     Ok(())
+}
+
+#[tokio::main]
+async fn try_main() -> Result<()> {
+    let addr = cli!().bind_addr();
+    listener(addr)
+        .instrument(always_span!("listener.tcp", bind = addr))
+        .await
 }
 
 fn read_from(source: Option<&std::path::Path>) -> Result<String> {
