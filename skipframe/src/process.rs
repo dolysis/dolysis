@@ -8,7 +8,7 @@ use {
     chrono::Utc,
     crossbeam_channel::Sender,
     futures::{channel::mpsc::Sender as AsyncSender, executor::block_on, prelude::*},
-    serde_interface::{KindMarker, Record, RecordKind, RecordSink},
+    serde_interface::{KindMarker, Record, RecordInterface, RecordKind, RecordSink},
     std::{
         io,
         path::Path,
@@ -46,6 +46,16 @@ pub fn process_child(
 ) -> Result<()> {
     let mut body = || -> Result<()> {
         let mut sink = RecordSink::new(tx_write.clone().sink_map_err(|e| CrateError::from(e)));
+        // let mut yada =
+        //     RecordInterface::new_sink(tx_write.clone().sink_map_err(|e| CrateError::from(e)));
+
+        // block_on(yada.as_sink().send(RecordKind::new(
+        //     KindMarker::Header,
+        //     AsMapSerialize::new(context.stream(&[
+        //         Item::Tag(Directive::Begin),
+        //         Item::Time(Utc::now().timestamp_nanos()),
+        //     ])),
+        // )))?;
 
         block_on(sink.sink_item(RecordKind::new(
             KindMarker::Header,

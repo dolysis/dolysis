@@ -15,3 +15,4 @@ tokio-util = { version = "0.2.0", features = ["codec"] }
 tokio = { version = "0.2.11", features = ["full"] }
 tokio-serde = "0.6.0"
 bytes = "0.5.4"
+pin-project = "0.4.8"
