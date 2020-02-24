@@ -1,13 +1,14 @@
 use {
     crate::{
         models::WriteChannel,
-        output::{AsMapSerialize, Directive, Item, OutputContext, RefContext},
+        output::{AsMapSerialize, Directive, Item, OutputContext},
         prelude::*,
     },
     bstr::io::BufReadExt,
     chrono::Utc,
     crossbeam_channel::Sender,
-    serde_interface::{KindMarker, Marker, Record, RecordKind},
+    futures::{channel::mpsc::Sender as AsyncSender, executor::block_on, prelude::*},
+    serde_interface::{KindMarker, Record, RecordKind, RecordSink},
     std::{
         io,
         path::Path,
@@ -40,19 +41,19 @@ where
 pub fn process_child(
     mut handle: Child,
     context: &OutputContext,
-    tx_write: &mut Sender<WriteChannel>,
+    tx_write: &mut AsyncSender<WriteChannel>,
     tx_child: &mut Sender<Child>,
 ) -> Result<()> {
     let mut body = || -> Result<()> {
-        serialize_record(
+        let mut sink = RecordSink::new(tx_write.clone().sink_map_err(|e| CrateError::from(e)));
+
+        block_on(sink.sink_item(RecordKind::new(
             KindMarker::Header,
-            context.stream(&[
-                Item::Version(1),
+            AsMapSerialize::new(context.stream(&[
                 Item::Tag(Directive::Begin),
                 Item::Time(Utc::now().timestamp_nanos()),
-            ]),
-        )
-        .and_then(|vec| tx_write.send(Some(vec)).map_err(|e| e.into()))?;
+            ])),
+        )))?;
 
         match (handle.stdout.take(), handle.stderr.take()) {
             // Attempt to parallelize output streams, if capacity in worker pool exists
@@ -72,15 +73,13 @@ pub fn process_child(
             (None, None) => (),
         }
 
-        serialize_record(
+        block_on(sink.sink_item(RecordKind::new(
             KindMarker::Header,
-            context.stream(&[
-                Item::Version(1),
+            AsMapSerialize::new(context.stream(&[
                 Item::Tag(Directive::End),
                 Item::Time(Utc::now().timestamp_nanos()),
-            ]),
-        )
-        .and_then(|vec| tx_write.send(Some(vec)).map_err(|e| e.into()))?;
+            ])),
+        )))?;
 
         Ok(())
     };
@@ -93,11 +92,11 @@ pub fn process_child(
 }
 
 /// Helper function for error serialization
-pub fn serialize_error(err: CrateError, tx_write: &mut Sender<WriteChannel>) {
+pub fn serialize_error(err: CrateError, tx_write: &mut AsyncSender<WriteChannel>) {
     // Better to panic here then try handling what is either an allocation failure or the writer thread disappearing
     // If this function is hit we've already experienced an error and we should hard crash rather than trying anything funny
-    let vec = serde_cbor::to_vec(&Record::new_error(1, err)).unwrap();
-    tx_write.send(Some(vec)).unwrap()
+    let mut sink = RecordSink::new(tx_write.clone().sink_map_err(|e| CrateError::from(e)));
+    futures::executor::block_on(sink.sink_item(Record::new_error(1, err))).unwrap()
 }
 
 /// Serializes a child's output and sends it to
@@ -106,41 +105,51 @@ fn process_child_output<R>(
     directive: Directive,
     context: &OutputContext,
     read: R,
-    tx_writer: Sender<WriteChannel>,
+    tx_write: AsyncSender<WriteChannel>,
 ) -> Result<()>
 where
     R: io::Read + Send,
 {
     let buffer = io::BufReader::new(read);
+    let mut sink = RecordSink::new(tx_write.clone().sink_map_err(|e| CrateError::from(e)));
 
     buffer
         .for_byte_line(|line| {
-            serialize_record(
+            block_on(sink.sink_item(RecordKind::new(
                 KindMarker::Data,
-                RefContext::new(context, line).stream(&[
-                    Item::Version(1),
+                AsMapSerialize::new(context.stream(&[
                     Item::Tag(directive),
                     Item::Time(Utc::now().timestamp_nanos()),
-                ]),
-            )
-            .and_then(|vec| tx_writer.send(Some(vec)).map_err(|e| e.into()))
-            // Ugly workaround for closure's io::Error requirement,
-            // Round trips from our local error into io::Error and back
+                    Item::Data(line),
+                ])),
+            )))
+            //Ugly workaround for closure's io::Error requirement,
+            //Round trips from our local error into io::Error and back
             .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
             .and(Ok(true))
         })
         .map_err(|e| e.into())
 }
 
-/// Helper function for serializing an iterator containing output data
-fn serialize_record<'out, I, M>(r_kind: M, iter: I) -> Result<Vec<u8>>
-where
-    I: Iterator<Item = &'out Item<'out>>,
-    M: Marker<Marker = KindMarker>,
-{
-    serde_cbor::to_vec(&RecordKind::new(
-        r_kind.as_marker(),
-        AsMapSerialize::new(iter),
-    ))
-    .map_err(|e| e.into())
-}
+// fn serialize_context<'out, I, M>(record_kind: M, iter: I) -> Result<WriteChannel>
+// where
+//     I: Iterator<Item = &'out Item<'out>> + Unpin,
+//     M: Marker<Marker = KindMarker>,
+// {
+//     std::pin::Pin::new(&mut Cbor::<Record, _>::default())
+//         .serialize(&RecordKind::new(record_kind, AsMapSerialize::new(iter)))
+//         .map_err(|e| e.into())
+// }
+
+// Helper function for serializing an iterator containing output data
+// fn serialize_record<'out, I, M>(r_kind: M, iter: I) -> Result<Vec<u8>>
+// where
+//     I: Iterator<Item = &'out Item<'out>>,
+//     M: Marker<Marker = KindMarker>,
+// {
+//     serde_cbor::to_vec(&RecordKind::new(
+//         r_kind.as_marker(),
+//         AsMapSerialize::new(iter),
+//     ))
+//     .map_err(|e| e.into())
+// }

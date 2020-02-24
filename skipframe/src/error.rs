@@ -1,5 +1,6 @@
 use {
     crossbeam_channel::SendError,
+    futures::channel::mpsc::SendError as AsyncSendError,
     serde_cbor::Error as CborError,
     serde_interface::InterfaceError,
     std::{ffi::OsString, fmt, io::Error as IoError, num::ParseIntError, str::Utf8Error},
@@ -70,6 +71,11 @@ pub enum Err {
     CborError {
         #[from]
         source: CborError,
+    },
+    #[error("Async channel send error: {}", .source)]
+    AsyncSendError {
+        #[from]
+        source: AsyncSendError,
     },
     #[error("Channel Receiver closed unexpectedly")]
     SendError,

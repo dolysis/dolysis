@@ -1,55 +1,93 @@
 use {
     crate::spec::Record,
     bytes::{Bytes, BytesMut},
-    futures::{
-        channel::mpsc::{Receiver, Sender},
-        prelude::*,
-    },
+    futures::prelude::*,
     serde::{Deserialize, Serialize},
-    std::{io, marker::PhantomData, pin::Pin},
-    tokio::{io::AsyncWrite, stream},
-    tokio_serde::{Deserializer, Framed, Serializer},
+    std::{
+        io,
+        marker::{PhantomData, Unpin},
+        pin::Pin,
+    },
+    tokio::io::AsyncWrite,
+    tokio_serde::{Deserializer, Serializer},
     tokio_util::codec,
 };
 
-pub struct RecordSink<S, T> {
-    frame: Framed<S, Record, T, Cbor<Record, T>>,
-}
+// pub struct RecordInterface<KIND> {
+//     kind: KIND,
+// }
 
-impl<S, T> RecordSink<S, T>
+// impl<KIND> RecordInterface<KIND>
+// where
+//     KIND: Sink<Bytes>,
+//     KIND::Error: From<io::Error>,
+// {
+//     pub fn new_sink(sink: KIND) -> Self {
+//         Self { kind: sink }
+//     }
+
+//     pub fn as_sink<T>(&mut self) -> RecordSink2<KIND, T> {
+//         RecordSink2 {
+//             sink: &mut self.kind,
+//             mkr: SymmetricalCbor::<T>::default(),
+//         }
+//     }
+// }
+
+// pub struct RecordSink2<'s, S, T>
+// where
+//     S: Sink<Bytes>,
+//     S::Error: From<io::Error>,
+// {
+//     sink: &'s mut S,
+//     mkr: SymmetricalCbor<T>,
+// }
+
+pub struct RecordSink<S>
 where
-    T: Serialize + std::marker::Unpin,
-    S: Sink<Bytes> + std::marker::Unpin,
+    S: Sink<Bytes> + Unpin,
     S::Error: From<io::Error>,
 {
-    pub fn new(write: S) -> Self {
-        Self {
-            frame: Framed::new(write, Cbor::default()),
-        }
-    }
-
-    pub fn block_on_send(&mut self, item: T) -> Result<(), S::Error> {
-        futures::executor::block_on(self.frame.send(item))?;
-        Ok(())
-    }
+    sink: S,
 }
 
-pub fn cbor_sink<T>(tx_write: Sender<Bytes>, item: T) -> Result<(), Box<dyn std::error::Error>>
+impl<S> RecordSink<S>
 where
-    T: Serialize + std::marker::Unpin,
+    S: Sink<Bytes> + Unpin,
+    S::Error: From<io::Error>,
 {
-    let mut sink: RecordSink<_, T> =
-        RecordSink::new(tx_write.sink_map_err(|e| io::Error::new(io::ErrorKind::Other, e)));
-    sink.block_on_send(item)?;
-    Ok(())
+    pub fn new(sink: S) -> Self {
+        Self { sink }
+    }
+
+    pub async fn sink_item<T>(&mut self, item: T) -> Result<(), S::Error>
+    where
+        T: Serialize + Unpin,
+    {
+        let datum = std::pin::Pin::new(&mut Cbor::<Record, _>::default()).serialize(&item)?;
+        self.sink.send(datum).await
+    }
+
+    pub async fn sink_stream<T, St>(&mut self, stream: St) -> Result<(), S::Error>
+    where
+        T: Serialize + Unpin,
+        St: Stream<Item = T>,
+    {
+        stream
+            .map(|item| {
+                std::pin::Pin::new(&mut Cbor::<Record, _>::default())
+                    .serialize(&item)
+                    .map_err(|e| e.into())
+            })
+            .forward(&mut self.sink)
+            .await
+    }
 }
 
-pub async fn cbor_write<W, I>(
-    write: W,
-    items: Receiver<Bytes>,
-) -> Result<(), Box<dyn std::error::Error>>
+pub async fn cbor_write<W, S>(write: W, items: S) -> Result<(), io::Error>
 where
     W: AsyncWrite,
+    S: Stream<Item = Bytes>,
 {
     let sink = codec::FramedWrite::new(write, codec::LengthDelimitedCodec::new());
     items.map(|b| Ok(b)).forward(sink).await?;

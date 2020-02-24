@@ -6,35 +6,38 @@ use {
         process::{process_child, serialize_error, spawn_process},
         ARGS,
     },
+    bytes::Bytes,
     crossbeam_channel::{unbounded, Receiver, Sender},
-    rayon::{iter::ParallelBridge, prelude::*},
-    serde_interface::Record,
-    std::{
-        convert::TryFrom,
-        io,
-        net::{Shutdown, TcpStream},
-        os::unix::fs::PermissionsExt,
-        path::Path,
-        process::Child,
-        thread,
+    futures::{
+        channel::mpsc::{Receiver as AsyncReceiver, Sender as AsyncSender},
+        sink::SinkExt,
     },
+    rayon::{iter::ParallelBridge, prelude::*},
+    serde_interface::{cbor_write, Record, RecordSink},
+    std::{
+        convert::TryFrom, io, marker::Unpin, os::unix::fs::PermissionsExt, path::Path,
+        process::Child, thread,
+    },
+    tokio::{net::TcpStream, prelude::*},
     walkdir::{DirEntry, WalkDir},
 };
 
 /// Alias for the type sent to the writer thread
-pub type WriteChannel = Option<Vec<u8>>;
+pub type WriteChannel = Bytes;
 
 /// Responsible for running, processing and serializing the output of, the executable paths
 /// passed in. This function assumes that the given iterator's output is sorted by Priority,
 /// _and is already sorted_. It will attempt to run anything of the same Priority in parallel
 /// given there are system resources to do so. After serializing it sends the byte buffer to
 /// a channel whose receiver is responsible for writing the data out
-pub fn process_list<F, I>(f: F, writer_tx: Sender<WriteChannel>, child_tx: Sender<Child>)
+pub fn process_list<F, I>(f: F, writer_tx: AsyncSender<WriteChannel>, child_tx: Sender<Child>)
 where
     F: FnOnce() -> I,
     I: Iterator<Item = Result<(Priority, DirEntry)>> + Send,
 {
     let (fctl_tx, fctl_rx): (Sender<()>, Receiver<()>) = unbounded();
+    let mut record_sink = RecordSink::new(writer_tx.clone().sink_map_err(|e| CrateError::from(e)));
+    futures::executor::block_on(record_sink.sink_item(Record::StreamStart)).unwrap();
 
     f().scan((None, 0u64), |state, result| -> Option<Result<DirEntry>> {
         let (prev, count) = state;
@@ -66,6 +69,7 @@ where
         result.map(|entry| {
             let mut bld = OutputContext::new();
             bld.insert_id(entry.path().file_name().unwrap().to_str().unwrap());
+            bld.insert_version(1);
             (entry, bld)
         })
     })
@@ -81,11 +85,13 @@ where
                 })
                 .unwrap_or_else(|e| serialize_error(e, writer));
 
-            fctl.send(());
+            fctl.send(())
+                .expect("Flow control rx cannot close before the tx");
         },
     );
+    futures::executor::block_on(record_sink.sink_item(Record::StreamEnd)).unwrap();
 
-    writer_tx.send(None);
+    drop(writer_tx);
 }
 
 /// Returns a iterator of Prioritized DirEntries that are guaranteed to be executable and NOT a directory.
@@ -118,9 +124,9 @@ where
 }
 
 /// Spawns a worker that handles all outbound writing done by this program
-pub fn worker_write(rx_writer: Receiver<WriteChannel>) -> thread::JoinHandle<Result<()>> {
-    thread::spawn(move || write_select(rx_writer))
-}
+// pub fn worker_write(rx_writer: Receiver<WriteChannel>) -> thread::JoinHandle<Result<()>> {
+//     thread::spawn(move || write_select(rx_writer))
+// }
 
 /// Receives all child processes that the main program is finished with and waits
 /// them. This is required on some architectures for the OS to release system resources.
@@ -129,7 +135,7 @@ pub fn worker_write(rx_writer: Receiver<WriteChannel>) -> thread::JoinHandle<Res
 pub fn worker_wait(rx_child: Receiver<Child>) -> thread::JoinHandle<Result<()>> {
     thread::spawn(move || {
         for mut child in rx_child.iter() {
-            child.wait();
+            let _ = child.wait();
         }
 
         Ok(())
@@ -137,15 +143,13 @@ pub fn worker_wait(rx_child: Receiver<Child>) -> thread::JoinHandle<Result<()>> 
 }
 
 /// Selects the output channel based on user input
-pub fn write_select(rx_writer: Receiver<WriteChannel>) -> Result<()> {
+pub async fn write_select(rx_writer: AsyncReceiver<WriteChannel>) -> Result<()> {
     match (ARGS.con_socket(), ARGS.con_tcp(), ARGS.con_stdout()) {
         (Some(socket), _, _) => {
             if cfg!(target_family = "unix") {
-                use std::os::unix::net::UnixStream;
-                let mut socket = UnixStream::connect(socket)?;
-                write_cbor(rx_writer, &mut socket)?;
-                socket.shutdown(Shutdown::Write)?;
-                Ok(())
+                use tokio::net::UnixStream;
+                let mut socket = UnixStream::connect(socket).await?;
+                write_cbor(rx_writer, &mut socket).await
             } else {
                 // Should not be possible to hit this path as con_socket() should always return None on
                 // non-unix systems
@@ -153,36 +157,24 @@ pub fn write_select(rx_writer: Receiver<WriteChannel>) -> Result<()> {
             }
         }
         (_, Some(addr), _) => {
-            let mut tcp = TcpStream::connect(addr)?;
-            write_cbor(rx_writer, &mut tcp)?;
-            tcp.shutdown(Shutdown::Write)?;
-            Ok(())
+            let mut tcp = TcpStream::connect(addr).await?;
+            write_cbor(rx_writer, &mut tcp).await
         }
-        (_, _, Some(_)) => write_debug(rx_writer),
+        (_, _, Some(_)) => unimplemented!(), //write_debug(rx_writer),
         _ => unreachable!(),
     }
 }
 
 /// Core functionality of the writer worker
-fn write_cbor<W>(rx_writer: Receiver<WriteChannel>, writer: W) -> Result<()>
+async fn write_cbor<W>(rx_writer: AsyncReceiver<WriteChannel>, writer: W) -> Result<()>
 where
-    W: io::Write,
+    W: tokio::io::AsyncWrite + Unpin,
 {
-    use io::Write;
-    let mut buffer = io::BufWriter::new(writer);
+    let mut buffer = tokio::io::BufWriter::new(writer);
 
-    serde_cbor::to_writer(&mut buffer, &Record::StreamStart)?;
-    for opt in rx_writer.iter() {
-        match opt {
-            Some(cbor) => {
-                &mut buffer.write(&cbor)?;
-            }
-            None => break,
-        }
-    }
-    serde_cbor::to_writer(&mut buffer, &Record::StreamEnd)?;
+    cbor_write(&mut buffer, rx_writer).await?;
 
-    buffer.flush()?;
+    buffer.flush().await?;
     Ok(())
 }
 
@@ -208,10 +200,9 @@ fn write_debug(rx_writer: Receiver<WriteChannel>) -> Result<()> {
 
     gen_record!(Record::StreamStart);
     for opt in rx_writer.iter() {
-        match opt.map(|cbor| serde_cbor::from_slice::<serde_interface::Record>(&cbor)) {
-            Some(Ok(record)) => writeln!(&mut buffer, "{:?}", record)?,
-            Some(Err(e)) => writeln!(io::stderr(), "{}", e)?,
-            None => break,
+        match serde_cbor::from_slice::<serde_interface::Record>(&opt) {
+            Ok(record) => writeln!(&mut buffer, "{:?}", record)?,
+            Err(e) => writeln!(io::stderr(), "{}", e)?,
         }
     }
     gen_record!(Record::StreamEnd);

@@ -803,9 +803,11 @@ name = "skipframe"
 version = "0.1.0"
 dependencies = [
  "bstr",
+ "bytes",
  "chrono",
  "clap",
  "crossbeam-channel",
+ "futures",
  "lazy_static",
  "rayon",
  "serde",
@@ -814,6 +816,7 @@ dependencies = [
  "serde_repr",
  "thiserror",
  "tokio",
+ "tokio-serde",
  "walkdir",
 ]
 
