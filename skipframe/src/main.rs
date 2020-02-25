@@ -25,22 +25,18 @@ lazy_static! {
 }
 
 fn main() {
+    let mut tokio = tokio::runtime::Runtime::new().unwrap();
     let (tx_write, rx_write) = async_bounded::<WriteChannel>(1024);
     let (tx_child, rx_child) = bounded::<std::process::Child>(1024);
 
     let child = worker_wait(rx_child);
-    tokio_entry(rx_write).unwrap();
+    let fut = tokio.spawn(write_select(rx_write));
 
     process_list(
         || get_executables_sorted(ARGS.exec_root()),
         tx_write,
         tx_child,
     );
-
+    tokio.block_on(fut).unwrap().unwrap();
     child.join().unwrap().unwrap();
-}
-
-#[tokio::main]
-async fn tokio_entry(rx_write: Receiver<WriteChannel>) -> Result<()> {
-    write_select(rx_write).await
 }

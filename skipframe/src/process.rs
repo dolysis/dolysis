@@ -8,7 +8,7 @@ use {
     chrono::Utc,
     crossbeam_channel::Sender,
     futures::{channel::mpsc::Sender as AsyncSender, executor::block_on, prelude::*},
-    serde_interface::{KindMarker, Record, RecordInterface, RecordKind, RecordSink},
+    serde_interface::{KindMarker, Record, RecordInterface, RecordKind},
     std::{
         io,
         path::Path,
@@ -45,19 +45,10 @@ pub fn process_child(
     tx_child: &mut Sender<Child>,
 ) -> Result<()> {
     let mut body = || -> Result<()> {
-        let mut sink = RecordSink::new(tx_write.clone().sink_map_err(|e| CrateError::from(e)));
-        // let mut yada =
-        //     RecordInterface::new_sink(tx_write.clone().sink_map_err(|e| CrateError::from(e)));
+        let mut sink =
+            RecordInterface::new_sink(tx_write.clone().sink_map_err(|e| CrateError::from(e)));
 
-        // block_on(yada.as_sink().send(RecordKind::new(
-        //     KindMarker::Header,
-        //     AsMapSerialize::new(context.stream(&[
-        //         Item::Tag(Directive::Begin),
-        //         Item::Time(Utc::now().timestamp_nanos()),
-        //     ])),
-        // )))?;
-
-        block_on(sink.sink_item(RecordKind::new(
+        block_on(sink.send(RecordKind::new(
             KindMarker::Header,
             AsMapSerialize::new(context.stream(&[
                 Item::Tag(Directive::Begin),
@@ -83,7 +74,7 @@ pub fn process_child(
             (None, None) => (),
         }
 
-        block_on(sink.sink_item(RecordKind::new(
+        block_on(sink.send(RecordKind::new(
             KindMarker::Header,
             AsMapSerialize::new(context.stream(&[
                 Item::Tag(Directive::End),
@@ -105,8 +96,9 @@ pub fn process_child(
 pub fn serialize_error(err: CrateError, tx_write: &mut AsyncSender<WriteChannel>) {
     // Better to panic here then try handling what is either an allocation failure or the writer thread disappearing
     // If this function is hit we've already experienced an error and we should hard crash rather than trying anything funny
-    let mut sink = RecordSink::new(tx_write.clone().sink_map_err(|e| CrateError::from(e)));
-    futures::executor::block_on(sink.sink_item(Record::new_error(1, err))).unwrap()
+    let mut sink =
+        RecordInterface::new_sink(tx_write.clone().sink_map_err(|e| CrateError::from(e)));
+    futures::executor::block_on(sink.send(Record::new_error(1, err))).unwrap()
 }
 
 /// Serializes a child's output and sends it to
@@ -121,11 +113,12 @@ where
     R: io::Read + Send,
 {
     let buffer = io::BufReader::new(read);
-    let mut sink = RecordSink::new(tx_write.clone().sink_map_err(|e| CrateError::from(e)));
+    let mut sink =
+        RecordInterface::new_sink(tx_write.clone().sink_map_err(|e| CrateError::from(e)));
 
     buffer
         .for_byte_line(|line| {
-            block_on(sink.sink_item(RecordKind::new(
+            block_on(sink.send(RecordKind::new(
                 KindMarker::Data,
                 AsMapSerialize::new(context.stream(&[
                     Item::Tag(directive),
@@ -140,26 +133,3 @@ where
         })
         .map_err(|e| e.into())
 }
-
-// fn serialize_context<'out, I, M>(record_kind: M, iter: I) -> Result<WriteChannel>
-// where
-//     I: Iterator<Item = &'out Item<'out>> + Unpin,
-//     M: Marker<Marker = KindMarker>,
-// {
-//     std::pin::Pin::new(&mut Cbor::<Record, _>::default())
-//         .serialize(&RecordKind::new(record_kind, AsMapSerialize::new(iter)))
-//         .map_err(|e| e.into())
-// }
-
-// Helper function for serializing an iterator containing output data
-// fn serialize_record<'out, I, M>(r_kind: M, iter: I) -> Result<Vec<u8>>
-// where
-//     I: Iterator<Item = &'out Item<'out>>,
-//     M: Marker<Marker = KindMarker>,
-// {
-//     serde_cbor::to_vec(&RecordKind::new(
-//         r_kind.as_marker(),
-//         AsMapSerialize::new(iter),
-//     ))
-//     .map_err(|e| e.into())
-// }

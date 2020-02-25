@@ -10,15 +10,18 @@ use {
     crossbeam_channel::{unbounded, Receiver, Sender},
     futures::{
         channel::mpsc::{Receiver as AsyncReceiver, Sender as AsyncSender},
+        io::Cursor,
         sink::SinkExt,
+        stream::{StreamExt, TryStreamExt},
     },
     rayon::{iter::ParallelBridge, prelude::*},
-    serde_interface::{cbor_write, Record, RecordSink},
+    serde_interface::{Record, RecordFrame, RecordInterface},
     std::{
-        convert::TryFrom, io, marker::Unpin, os::unix::fs::PermissionsExt, path::Path,
-        process::Child, thread,
+        convert::TryFrom, marker::Unpin, os::unix::fs::PermissionsExt, path::Path, process::Child,
+        thread,
     },
-    tokio::{net::TcpStream, prelude::*},
+    tokio::net::TcpStream,
+    tokio_util::compat::FuturesAsyncReadCompatExt,
     walkdir::{DirEntry, WalkDir},
 };
 
@@ -36,8 +39,9 @@ where
     I: Iterator<Item = Result<(Priority, DirEntry)>> + Send,
 {
     let (fctl_tx, fctl_rx): (Sender<()>, Receiver<()>) = unbounded();
-    let mut record_sink = RecordSink::new(writer_tx.clone().sink_map_err(|e| CrateError::from(e)));
-    futures::executor::block_on(record_sink.sink_item(Record::StreamStart)).unwrap();
+    let mut record_sink =
+        RecordInterface::new_sink(writer_tx.clone().sink_map_err(|e| CrateError::from(e)));
+    futures::executor::block_on(record_sink.send(Record::StreamStart)).unwrap();
 
     f().scan((None, 0u64), |state, result| -> Option<Result<DirEntry>> {
         let (prev, count) = state;
@@ -89,7 +93,7 @@ where
                 .expect("Flow control rx cannot close before the tx");
         },
     );
-    futures::executor::block_on(record_sink.sink_item(Record::StreamEnd)).unwrap();
+    futures::executor::block_on(record_sink.send(Record::StreamEnd)).unwrap();
 
     drop(writer_tx);
 }
@@ -160,54 +164,47 @@ pub async fn write_select(rx_writer: AsyncReceiver<WriteChannel>) -> Result<()> 
             let mut tcp = TcpStream::connect(addr).await?;
             write_cbor(rx_writer, &mut tcp).await
         }
-        (_, _, Some(_)) => unimplemented!(), //write_debug(rx_writer),
+        (_, _, Some(_)) => write_debug(rx_writer).await,
         _ => unreachable!(),
     }
 }
 
 /// Core functionality of the writer worker
-async fn write_cbor<'a, W>(rx_writer: AsyncReceiver<WriteChannel>, writer: &'a mut W) -> Result<()>
+async fn write_cbor<W>(rx_writer: AsyncReceiver<WriteChannel>, writer: W) -> Result<()>
 where
-    W: tokio::io::AsyncWrite + ?Sized,
+    W: tokio::io::AsyncWrite + Unpin,
 {
-    let mut buffer = tokio::io::BufWriter::new(writer);
+    let buffer = tokio::io::BufWriter::new(writer);
+    rx_writer
+        .map(|item| Ok(item))
+        .forward(RecordFrame::write(buffer))
+        .await?;
 
-    cbor_write(&mut buffer, rx_writer).await?;
-
-    buffer.flush().await?;
     Ok(())
 }
 
 /// Prints to stdout, but as rust's Debug impl of the records not cbor. Should mostly be used
 /// for debugging purposes
-fn write_debug(rx_writer: Receiver<WriteChannel>) -> Result<()> {
-    use io::Write;
-    let mut buffer = io::BufWriter::new(io::stdout());
+async fn write_debug(rx_writer: AsyncReceiver<WriteChannel>) -> Result<()> {
+    println!("Inside debug writer");
+    let mut buffer = Cursor::new(Vec::new()).compat();
+    {
+        let mut frame = RecordFrame::read_write(&mut buffer);
 
-    // Yes it is wasteful to serialize and then deserialize (and allocate!) for a single item;
-    // but this function will mainly be used for debugging output, and doing the whole process
-    // reduces the chances of bugs only showing up in the "real function" or vice versa.
-    macro_rules! gen_record {
-        ($rcd:expr) => {
-            match serde_cbor::to_vec(&$rcd)
-                .and_then(|cbor| serde_cbor::from_slice::<serde_interface::Record>(&cbor))
-            {
-                Ok(record) => writeln!(&mut buffer, "{:?}", record)?,
-                Err(e) => writeln!(io::stderr(), "{}", e)?,
-            }
-        };
+        rx_writer
+            .inspect(|item| println!("Got an item, sized: {}", item.len()))
+            .map(|item| Ok(item))
+            .forward(&mut frame)
+            .await?;
+    }
+    buffer.get_mut().set_position(0);
+
+    let mut record_stream = RecordInterface::new_stream(RecordFrame::read(&mut buffer));
+
+    while let Some(record) = record_stream.try_next().await? {
+        println!("{:?}", record)
     }
 
-    gen_record!(Record::StreamStart);
-    for opt in rx_writer.iter() {
-        match serde_cbor::from_slice::<serde_interface::Record>(&opt) {
-            Ok(record) => writeln!(&mut buffer, "{:?}", record)?,
-            Err(e) => writeln!(io::stderr(), "{}", e)?,
-        }
-    }
-    gen_record!(Record::StreamEnd);
-
-    buffer.flush()?;
     Ok(())
 }
 
