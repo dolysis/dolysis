@@ -2,10 +2,9 @@ use {
     crate::{
         cli::{generate_cli, ProgramArgs},
         models::{get_executables_sorted, process_list, worker_wait, write_select, WriteChannel},
-        prelude::*,
     },
     crossbeam_channel::bounded,
-    futures::channel::mpsc::{channel as async_bounded, Receiver},
+    futures::channel::mpsc::channel as async_bounded,
     lazy_static::lazy_static,
 };
 

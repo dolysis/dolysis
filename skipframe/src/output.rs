@@ -64,9 +64,9 @@ impl OutputContext {
         self.inner.push(Item::Version(version))
     }
 
-    pub fn as_ref(&self) -> &[Item] {
-        &self.inner
-    }
+    // pub fn as_ref(&self) -> &[Item] {
+    //     &self.inner
+    // }
 
     pub fn stream<'a, 'b: 'a>(
         &'b self,
@@ -75,36 +75,6 @@ impl OutputContext {
         header.iter().chain(self.inner.iter())
     }
 }
-
-/// Short lived glue struct for processing child process's output streams
-/// Note that 'out refers to the short lived byte slice containing the child output,
-/// whereas 'a refers to a lifetime _at least_ as long as the backing OutputContext's
-/// lifetime, but may be longer
-// pub struct RefContext<'a, 'out> {
-//     backing: &'a [Item<'a>],
-//     data: Item<'out>,
-// }
-
-// impl<'a, 'out> RefContext<'a, 'out> {
-//     pub fn new(backing: &'a OutputContext, data: &'out [u8]) -> Self {
-//         Self {
-//             backing: backing.as_ref(),
-//             data: Item::Data(data),
-//         }
-//     }
-
-//     pub fn stream(
-//         &'out self,
-//         header: &'out [Item<'static>],
-//     ) -> impl Iterator<Item = &'out Item<'out>> {
-//         header
-//             .iter()
-//             .chain(self.backing)
-//             .map(|i| Some(i))
-//             .chain(Some(&self.data).map(|d| Some(d)))
-//             .filter_map(|o| o)
-//     }
-// }
 
 /// Serializes the collected output as a k:v map
 pub struct AsMapSerialize<I> {

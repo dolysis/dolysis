@@ -812,7 +812,6 @@ dependencies = [
  "lazy_static",
  "rayon",
  "serde",
- "serde_cbor",
  "serde_interface",
  "serde_repr",
  "thiserror",

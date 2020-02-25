@@ -6,7 +6,7 @@ use {
     serde::{Deserialize, Serialize},
     std::{
         io,
-        marker::{PhantomData, Unpin},
+        marker::PhantomData,
         pin::Pin,
         task::{Context, Poll},
     },

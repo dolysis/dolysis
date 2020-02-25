@@ -1,7 +1,6 @@
 use {
     crossbeam_channel::SendError,
     futures::channel::mpsc::SendError as AsyncSendError,
-    serde_cbor::Error as CborError,
     serde_interface::InterfaceError,
     std::{ffi::OsString, fmt, io::Error as IoError, num::ParseIntError, str::Utf8Error},
     thiserror::Error,
@@ -66,11 +65,6 @@ pub enum Err {
     Utf8 {
         #[from]
         source: Utf8Error,
-    },
-    #[error("Serializer (CBOR) error: {}", .source)]
-    CborError {
-        #[from]
-        source: CborError,
     },
     #[error("Async channel send error: {}", .source)]
     AsyncSendError {

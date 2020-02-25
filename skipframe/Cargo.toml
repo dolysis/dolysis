@@ -15,7 +15,6 @@ crossbeam-channel = "0.4.0"
 bstr = "0.2.11"
 thiserror = "1.0.11"
 chrono = "0.4.10"
-serde_cbor = "0.11.1"
 serde = { version = "1.0.104", features = ["derive", "rc"] }
 serde_repr = "0.1.5"
 serde_interface = { path = "../serde_interface" }
