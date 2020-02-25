@@ -1,7 +1,7 @@
 use {
     crate::spec::Record,
     bytes::{Bytes, BytesMut},
-    futures::{pin_mut, prelude::*, ready},
+    futures::{prelude::*, ready},
     pin_project::pin_project,
     serde::{Deserialize, Serialize},
     std::{
@@ -10,7 +10,7 @@ use {
         pin::Pin,
         task::{Context, Poll},
     },
-    tokio::io::AsyncWrite,
+    tokio::io::{AsyncRead, AsyncWrite},
     tokio_serde::{Deserializer, Serializer},
     tokio_util::codec,
 };
@@ -75,7 +75,6 @@ where
     St: Stream<Item = Result<BytesMut, E>>,
     St: TryStream<Ok = BytesMut, Error = E>,
     E: From<io::Error>,
-    BytesMut: From<St::Ok>,
 {
     type Item = Result<Record, St::Error>;
 
@@ -118,7 +117,6 @@ where
     }
 
     fn start_send(mut self: Pin<&mut Self>, item: T) -> Result<(), Self::Error> {
-        //let what: usize = self.as_mut().project().sink;
         let res = self.as_mut().project().mkr.serialize(&item);
         let bytes = res.map_err(|e| e.into())?;
 
@@ -186,6 +184,16 @@ where
     items.map(|b| Ok(b)).forward(sink).await?;
     Ok(())
 }
+
+// fn test<T>(io: T) -> Result<(), io::Error>
+// where
+//     T: AsyncRead + AsyncWrite,
+// {
+//     let framed = codec::Framed::new(io, codec::LengthDelimitedCodec::new());
+//     let what = RecordInterface::new_sink(framed);
+
+//     Ok(())
+// }
 
 /// Generic visitor that implements tokio-serde's De/Serialize traits
 pub struct Cbor<Item, SinkItem> {

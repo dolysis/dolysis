@@ -166,9 +166,9 @@ pub async fn write_select(rx_writer: AsyncReceiver<WriteChannel>) -> Result<()> 
 }
 
 /// Core functionality of the writer worker
-async fn write_cbor<W>(rx_writer: AsyncReceiver<WriteChannel>, writer: W) -> Result<()>
+async fn write_cbor<'a, W>(rx_writer: AsyncReceiver<WriteChannel>, writer: &'a mut W) -> Result<()>
 where
-    W: tokio::io::AsyncWrite + Unpin,
+    W: tokio::io::AsyncWrite + ?Sized,
 {
     let mut buffer = tokio::io::BufWriter::new(writer);
 
