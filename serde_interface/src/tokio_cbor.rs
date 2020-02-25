@@ -1,7 +1,7 @@
 use {
     crate::spec::Record,
     bytes::{Bytes, BytesMut},
-    futures::{prelude::*, ready},
+    futures::{pin_mut, prelude::*, ready},
     pin_project::pin_project,
     serde::{Deserialize, Serialize},
     std::{
@@ -12,77 +12,171 @@ use {
     },
     tokio::io::{AsyncRead, AsyncWrite},
     tokio_serde::{Deserializer, Serializer},
-    tokio_util::codec,
+    tokio_util::codec::{Framed, FramedRead, FramedWrite, LengthDelimitedCodec},
 };
 
-pub struct RecordInterface<KIND> {
-    kind: KIND,
-}
+pub struct RecordFrame;
 
-impl<KIND> RecordInterface<KIND>
-where
-    KIND: Sink<Bytes> + Unpin,
-    KIND::Error: From<io::Error>,
-{
-    pub fn new_sink(sink: KIND) -> Self {
-        Self { kind: sink }
-    }
-
-    pub fn as_sink<T>(&mut self) -> RecordSink2<KIND, T>
+impl RecordFrame {
+    pub fn read_write<T>(io: T) -> RecordFrameBoth<T>
     where
-        T: Serialize,
+        T: AsyncRead + AsyncWrite,
     {
-        RecordSink2 {
-            sink: Pin::new(&mut self.kind),
-            mkr: SymmetricalCbor::<T>::default(),
-        }
+        RecordFrameBoth::new(io, LengthDelimitedCodec::default())
+    }
+
+    pub fn read<T>(io: T) -> RecordFrameRead<T>
+    where
+        T: AsyncRead,
+    {
+        RecordFrameRead::new(io, LengthDelimitedCodec::default())
+    }
+
+    pub fn write<T>(io: T) -> RecordFrameWrite<T>
+    where
+        T: AsyncWrite,
+    {
+        RecordFrameWrite::new(io, LengthDelimitedCodec::default())
     }
 }
 
-impl<KIND> RecordInterface<KIND>
-where
-    KIND: TryStream<Ok = BytesMut> + Unpin,
-    KIND::Error: From<io::Error>,
-    BytesMut: From<KIND::Ok>,
-{
-    pub fn new_stream(stream: KIND) -> Self {
-        Self { kind: stream }
-    }
-
-    pub fn as_stream(&mut self) -> RecordStream<KIND> {
-        RecordStream {
-            stream: Pin::new(&mut self.kind),
-            mkr: SymmetricalCbor::<Record>::default(),
-        }
-    }
-}
+pub type RecordFrameBoth<T> = Framed<T, LengthDelimitedCodec>;
+pub type RecordFrameRead<T> = FramedRead<T, LengthDelimitedCodec>;
+pub type RecordFrameWrite<T> = FramedWrite<T, LengthDelimitedCodec>;
 
 #[pin_project]
-pub struct RecordStream<'s, St>
-where
-    St: TryStream<Ok = BytesMut>,
-    St::Error: From<io::Error>,
-    BytesMut: From<St::Ok>,
-{
+pub struct RecordInterface<IF> {
     #[pin]
-    stream: Pin<&'s mut St>,
-    #[pin]
-    mkr: SymmetricalCbor<Record>,
+    inner: IF,
 }
 
-impl<'s, St, E> Stream for RecordStream<'s, St>
+impl<IF> RecordInterface<IF>
 where
-    St: Stream<Item = Result<BytesMut, E>>,
-    St: TryStream<Ok = BytesMut, Error = E>,
+    IF: TryStream<Ok = BytesMut>,
+    IF: Sink<Bytes>,
+    <IF as TryStream>::Error: From<io::Error>,
+    <IF as Sink<Bytes>>::Error: From<io::Error>,
+{
+    /// Generates an Interface that implements both `Sink<T: Serialize>` and `TryStream<Ok = Record>`
+    /// from an underlying object. Most commonly, a
+    /// `RecordFrame` instance.
+    /// It is useful for situations when you need to both deserialize and serialize `Record`s.
+    /// If you only have the async IO stream (i.e a type that is `AsyncRead + AsyncWrite`)
+    /// prefer using `RecordInterface::from_both`
+    pub fn new_both(inner: IF) -> Self {
+        Self { inner }
+    }
+}
+
+impl<IF> RecordInterface<IF>
+where
+    IF: TryStream<Ok = BytesMut>,
+    IF::Error: From<io::Error>,
+{
+    /// Generates an Interface that implements `TryStream<Ok = Record>`
+    /// This function is useful when the IO stream is being handled further
+    /// up the data stream, for example, if your data stream looks like this: TCP Socket -> `RecordFrameRead` -> `map()` -> `channel` -> ... -> `RecordInterface`
+    ///
+    /// If you only have the async IO stream (i.e a type that is at least `AsyncRead`)
+    /// prefer using `RecordInterface::from_write`
+    pub fn new_stream(inner: IF) -> Self {
+        Self { inner }
+    }
+}
+
+impl<IF> RecordInterface<IF>
+where
+    IF: Sink<Bytes>,
+    IF::Error: From<io::Error>,
+{
+    /// Generates an Interface that implements `Sink<T: Serialize>` from an underlying
+    /// sink, most commonly a `RecordFrameWrite`
+    /// This function is useful when the IO stream is further down the data stream, i.e `RecordInterface` -> `channel` -> `inspect()` -> TCP Socket.
+    ///
+    /// If you only have the async IO stream (i.e a type that is at least `AsyncWrite`)
+    /// prefer using `RecordInterface::from_read`
+    pub fn new_sink(inner: IF) -> Self {
+        Self { inner }
+    }
+}
+
+impl<T> RecordInterface<Framed<T, LengthDelimitedCodec>>
+where
+    T: AsyncRead + AsyncWrite,
+{
+    /// Generates an Interface that implements both `Sink<T: Serialize>` and `TryStream<Ok = Record>`
+    /// this function requires that the underlying io type is `AsyncRead + AsyncWrite`
+    pub fn from_both(io: T) -> Self {
+        Framed::new(io, LengthDelimitedCodec::new()).into()
+    }
+}
+
+impl<T> RecordInterface<FramedWrite<T, LengthDelimitedCodec>>
+where
+    T: AsyncWrite,
+{
+    /// Generates a write only Interface that implements `Sink<T: Serialize>`
+    /// this function only requires that the underlying io type is `AsyncWrite`
+    pub fn from_write(io: T) -> Self {
+        FramedWrite::new(io, LengthDelimitedCodec::new()).into()
+    }
+}
+
+impl<T> RecordInterface<FramedRead<T, LengthDelimitedCodec>>
+where
+    T: AsyncRead,
+{
+    /// Generates a read only Interface that implements `TryStream<Ok = Record>`
+    /// this function only requires that the underlying io type is `AsyncRead`
+    pub fn from_read(io: T) -> Self {
+        FramedRead::new(io, LengthDelimitedCodec::new()).into()
+    }
+}
+
+impl<T> From<Framed<T, LengthDelimitedCodec>> for RecordInterface<Framed<T, LengthDelimitedCodec>>
+where
+    T: AsyncRead + AsyncWrite,
+{
+    fn from(framed_io: Framed<T, LengthDelimitedCodec>) -> Self {
+        RecordInterface::new_both(framed_io)
+    }
+}
+
+impl<T> From<FramedRead<T, LengthDelimitedCodec>>
+    for RecordInterface<FramedRead<T, LengthDelimitedCodec>>
+where
+    T: AsyncRead,
+{
+    fn from(framed_io: FramedRead<T, LengthDelimitedCodec>) -> Self {
+        RecordInterface::new_stream(framed_io)
+    }
+}
+
+impl<T> From<FramedWrite<T, LengthDelimitedCodec>>
+    for RecordInterface<FramedWrite<T, LengthDelimitedCodec>>
+where
+    T: AsyncWrite,
+{
+    fn from(framed_io: FramedWrite<T, LengthDelimitedCodec>) -> Self {
+        RecordInterface::new_sink(framed_io)
+    }
+}
+
+impl<IF, E> Stream for RecordInterface<IF>
+where
+    IF: Stream<Item = Result<BytesMut, E>>,
+    IF: TryStream<Ok = BytesMut, Error = E>,
     E: From<io::Error>,
 {
-    type Item = Result<Record, St::Error>;
+    type Item = Result<Record, IF::Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        match ready!(self.as_mut().project().stream.poll_next(cx)) {
+        match ready!(self.as_mut().project().inner.poll_next(cx)) {
             Some(res) => match res {
                 Ok(bytes) => {
-                    Poll::Ready(Some(Ok(self.as_mut().project().mkr.deserialize(&bytes)?)))
+                    let mkr = SymmetricalCbor::<Record>::default();
+                    pin_mut!(mkr);
+                    Poll::Ready(Some(Ok(mkr.deserialize(&bytes)?)))
                 }
                 Err(e) => Poll::Ready(Some(Err(e))),
             },
@@ -91,109 +185,37 @@ where
     }
 }
 
-#[pin_project]
-pub struct RecordSink2<'s, S, T>
+impl<IF, T> Sink<T> for RecordInterface<IF>
 where
-    S: Sink<Bytes>,
-    S::Error: From<io::Error>,
+    IF: Sink<Bytes>,
+    IF::Error: From<io::Error>,
     T: Serialize,
 {
-    #[pin]
-    sink: Pin<&'s mut S>,
-    #[pin]
-    mkr: SymmetricalCbor<T>,
-}
-
-impl<'s, S, T> Sink<T> for RecordSink2<'s, S, T>
-where
-    S: Sink<Bytes>,
-    S::Error: From<io::Error>,
-    T: Serialize,
-{
-    type Error = S::Error;
+    type Error = IF::Error;
 
     fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.project().sink.poll_ready(cx)
+        self.project().inner.poll_ready(cx)
     }
 
     fn start_send(mut self: Pin<&mut Self>, item: T) -> Result<(), Self::Error> {
-        let res = self.as_mut().project().mkr.serialize(&item);
+        let mkr = SymmetricalCbor::<T>::default();
+        pin_mut!(mkr);
+        let res = mkr.serialize(&item);
         let bytes = res.map_err(|e| e.into())?;
 
-        self.as_mut().project().sink.start_send(bytes)?;
+        self.as_mut().project().inner.start_send(bytes)?;
         Ok(())
     }
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.project().sink.poll_flush(cx)
+        self.project().inner.poll_flush(cx)
     }
 
     fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        ready!(self.as_mut().poll_flush(cx))?;
-        self.project().sink.poll_close(cx)
+        ready!(self.as_mut().project().inner.poll_flush(cx))?;
+        self.project().inner.poll_close(cx)
     }
 }
-
-pub struct RecordSink<S>
-where
-    S: Sink<Bytes> + Unpin,
-    S::Error: From<io::Error>,
-{
-    sink: S,
-}
-
-impl<S> RecordSink<S>
-where
-    S: Sink<Bytes> + Unpin,
-    S::Error: From<io::Error>,
-{
-    pub fn new(sink: S) -> Self {
-        Self { sink }
-    }
-
-    pub async fn sink_item<T>(&mut self, item: T) -> Result<(), S::Error>
-    where
-        T: Serialize + Unpin,
-    {
-        let datum = std::pin::Pin::new(&mut Cbor::<Record, _>::default()).serialize(&item)?;
-        self.sink.send(datum).await
-    }
-
-    pub async fn sink_stream<T, St>(&mut self, stream: St) -> Result<(), S::Error>
-    where
-        T: Serialize + Unpin,
-        St: Stream<Item = T>,
-    {
-        stream
-            .map(|item| {
-                std::pin::Pin::new(&mut Cbor::<Record, _>::default())
-                    .serialize(&item)
-                    .map_err(|e| e.into())
-            })
-            .forward(&mut self.sink)
-            .await
-    }
-}
-
-pub async fn cbor_write<W, S>(write: W, items: S) -> Result<(), io::Error>
-where
-    W: AsyncWrite,
-    S: Stream<Item = Bytes>,
-{
-    let sink = codec::FramedWrite::new(write, codec::LengthDelimitedCodec::new());
-    items.map(|b| Ok(b)).forward(sink).await?;
-    Ok(())
-}
-
-// fn test<T>(io: T) -> Result<(), io::Error>
-// where
-//     T: AsyncRead + AsyncWrite,
-// {
-//     let framed = codec::Framed::new(io, codec::LengthDelimitedCodec::new());
-//     let what = RecordInterface::new_sink(framed);
-
-//     Ok(())
-// }
 
 /// Generic visitor that implements tokio-serde's De/Serialize traits
 pub struct Cbor<Item, SinkItem> {
