@@ -817,6 +817,9 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-util",
+ "tracing",
+ "tracing-futures",
+ "tracing-subscriber",
  "walkdir",
 ]
 

@@ -15,35 +15,37 @@ use {
     tokio_util::codec::{Framed, FramedRead, FramedWrite, LengthDelimitedCodec},
 };
 
+/// Contains convenience methods for generating framed readers/writers
 pub struct RecordFrame;
 
 impl RecordFrame {
-    pub fn read_write<T>(io: T) -> RecordFrameBoth<T>
+    /// Framed variant that is read and write
+    pub fn read_write<T>(io: T) -> Framed<T, LengthDelimitedCodec>
     where
         T: AsyncRead + AsyncWrite,
     {
-        RecordFrameBoth::new(io, LengthDelimitedCodec::default())
+        Framed::new(io, LengthDelimitedCodec::default())
     }
 
-    pub fn read<T>(io: T) -> RecordFrameRead<T>
+    /// Read only variant
+    pub fn read<T>(io: T) -> FramedRead<T, LengthDelimitedCodec>
     where
         T: AsyncRead,
     {
-        RecordFrameRead::new(io, LengthDelimitedCodec::default())
+        FramedRead::new(io, LengthDelimitedCodec::default())
     }
 
-    pub fn write<T>(io: T) -> RecordFrameWrite<T>
+    /// Write only variant
+    pub fn write<T>(io: T) -> FramedWrite<T, LengthDelimitedCodec>
     where
         T: AsyncWrite,
     {
-        RecordFrameWrite::new(io, LengthDelimitedCodec::default())
+        FramedWrite::new(io, LengthDelimitedCodec::default())
     }
 }
 
-pub type RecordFrameBoth<T> = Framed<T, LengthDelimitedCodec>;
-pub type RecordFrameRead<T> = FramedRead<T, LengthDelimitedCodec>;
-pub type RecordFrameWrite<T> = FramedWrite<T, LengthDelimitedCodec>;
-
+/// Provides an interface for moving from deserialized Records to serialized
+/// byte buffers and vice versa.
 #[pin_project]
 pub struct RecordInterface<IF> {
     #[pin]
