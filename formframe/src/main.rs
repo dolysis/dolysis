@@ -1,19 +1,36 @@
 use {
     crate::{
         cli::{generate_cli, ProgramArgs},
-        load::filter::{is_match, FilterSet},
+        error::MainResult,
+        load::filter::is_match,
+        models::{check_args, init_logging, tcp::listener},
+        prelude::{CrateResult as Result, *},
     },
     lazy_static::lazy_static,
-    std::sync::Arc,
+    tracing_futures::Instrument,
 };
 
 mod cli;
+mod error;
 mod graph;
 mod load;
+mod models;
+
+mod prelude {
+    pub use {
+        crate::{
+            cli, enter,
+            error::{CrateError, CrateResult, LogError},
+        },
+        tracing::{
+            debug, debug_span, error, error_span as always_span, info, info_span, instrument,
+            trace, trace_span, warn, Level,
+        },
+    };
+}
 
 lazy_static! {
-    pub static ref ARGS: Result<ProgramArgs, Arc<dyn std::error::Error + Send + Sync>> =
-        ProgramArgs::try_init(generate_cli());
+    pub static ref ARGS: Result<ProgramArgs> = ProgramArgs::try_init(generate_cli());
 }
 
 #[macro_export]
@@ -24,20 +41,27 @@ macro_rules! cli {
     }};
 }
 
-fn main() {
-    if let Err(e) = try_main() {
-        eprintln!("Fatal: {}", e)
-    }
+#[macro_export]
+macro_rules! enter {
+    ($span:expr) => {
+        let span = $span;
+        let _grd = span.enter();
+    };
+    ($var:ident, $span:expr) => {
+        let $var = $span;
+        let _grd = $var.enter();
+    };
 }
 
-fn try_main() -> Result<(), Box<dyn std::error::Error>> {
-    match check_args() {
-        Ok(_) => (),
-        Err(e) => return Err(format!("{}", e).into()),
-    };
+fn main() -> MainResult<()> {
+    init_logging();
+    check_args()?;
+    enter!(always_span!("main"));
+    info!("Program Args loaded");
+
+    //try_main().map_err(|e| e.into())
 
     let data = read_from(cli!().get_input())?;
-
     cli!().get_filter().access_set(|arena, set| {
         println!("Using '{}' as the data...", &data);
         for (name, root) in set.iter() {
@@ -53,7 +77,15 @@ fn try_main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn read_from(source: Option<&std::path::Path>) -> Result<String, Box<dyn std::error::Error>> {
+#[tokio::main]
+async fn try_main() -> Result<()> {
+    let addr = cli!().bind_addr();
+    listener(addr)
+        .instrument(always_span!("listener.tcp", bind = addr))
+        .await
+}
+
+fn read_from(source: Option<&std::path::Path>) -> Result<String> {
     use std::io::Read;
     let mut s = String::new();
 
@@ -66,13 +98,5 @@ fn read_from(source: Option<&std::path::Path>) -> Result<String, Box<dyn std::er
             .and_then(|mut f| f.read_to_string(&mut s))
             .map(|_| s)
             .map_err(|e| e.into()),
-    }
-}
-
-fn check_args() -> Result<(), Arc<dyn std::error::Error>> {
-    let args = ARGS.as_ref();
-    match args {
-        Ok(_) => Ok(()),
-        Err(e) => Err(Arc::clone(e) as Arc<dyn std::error::Error>),
     }
 }

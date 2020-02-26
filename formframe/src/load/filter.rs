@@ -1,10 +1,11 @@
 use {
-    crate::graph::Node,
+    super::error::{Err, LoadError},
+    crate::{graph::Node, prelude::*},
     generational_arena::{Arena, Index},
     regex::Regex,
     serde::{de, Deserialize, Deserializer},
     serde_yaml::from_reader as read_yaml,
-    std::{collections::HashMap, error, io},
+    std::{collections::HashMap, io},
 };
 
 pub use serial_traverse as is_match;
@@ -16,25 +17,21 @@ pub struct FilterSet {
 }
 
 impl FilterSet {
-    pub fn try_new<R>(data: R) -> Result<Self, Box<dyn error::Error>>
+    pub fn try_new<R>(data: R) -> Result<Self, LoadError>
     where
         R: io::Read,
     {
         let wrap: FWrap = read_yaml(data)?;
+
+        trace!("Yaml syntax valid");
+
         let mut store = Arena::new();
         let mut set = HashMap::new();
 
         wrap.filter.into_iter().try_for_each(|(name, seeds)| {
+            enter!(always_span!("init.filter", filter.name = name.as_str()));
             set.insert(name.clone(), init_tree(&mut store, seeds))
-                .map_or_else(
-                    || Ok(()),
-                    |_| {
-                        Err(
-                            Box::from(format!("Error! Duplicate top level regex name: {}", name))
-                                as Box<dyn error::Error>,
-                        )
-                    },
-                )
+                .map_or_else(|| Ok(()), |_| Err(Err::DuplicateRootName(name)))
         })?;
 
         Ok(Self {
@@ -61,9 +58,9 @@ pub fn serial_traverse(
     match data.ty {
         // Run regex
         NodeType::Regex(ref rx) => {
-            let b = rx.is_match(text);
-            println!("RX: {}, = {}", rx, b.negate(data.negate));
-            b.negate(data.negate)
+            let b = rx.is_match(text).negate(data.negate);
+            debug!(regex = %rx, negate = data.negate.as_bool(), matched = b);
+            b
         }
         // Wait for all success / return on first error
         NodeType::And => {
@@ -107,12 +104,17 @@ pub fn serial_traverse(
 }
 
 fn init_tree(arena: &mut Arena<Node<FilterData>>, seeds: Vec<FilterSeed>) -> Index {
+    trace!("Starting filter's recursive init");
     let mut top_level = init_recursive(arena, false, seeds.into_iter());
+    trace!("Finished filter's recursive init");
 
     match top_level.len() {
         // If the tree is completely empty, return a 'And' root that always returns true
         // TODO: This seems weird... it might be better to error here and bail out
-        0 => Node::new(NodeType::And.into(), arena),
+        0 => {
+            warn!("Filter has no nodes, this named filter will always return true");
+            Node::new(NodeType::And.into(), arena)
+        }
         // If there is only one node in the top level return it as the root node
         1 => top_level.pop().unwrap(),
         // Otherwise instantiate a top level 'And' node
@@ -135,6 +137,7 @@ where
         match seed {
             // A Regex seed will never have children, it is guaranteed to be a leaf node.
             FilterSeed::Regex(rx) => {
+                debug!(kind = "RX", negate, regex = %&rx);
                 let node = Node::new(FilterData::new(NodeType::Regex(rx), negate), arena);
 
                 edges.push(node);
@@ -144,6 +147,7 @@ where
             FilterSeed::Not(vec) => {
                 // Notice we shadow invert whatever the bool was
                 let negate = !negate;
+                trace!(kind = "NOT", negate, children = vec.len());
                 let e = init_recursive(arena, negate, vec.into_iter());
 
                 edges.extend(e);
@@ -152,8 +156,14 @@ where
             // assign them their children, before pushing them to the calling node's children
             seed @ FilterSeed::And(_) | seed @ FilterSeed::Or(_) => {
                 let (nt, vec) = match seed {
-                    FilterSeed::And(vec) => (NodeType::And, vec),
-                    FilterSeed::Or(vec) => (NodeType::Or, vec),
+                    FilterSeed::And(vec) => {
+                        trace!(kind = "AND", negate, children = vec.len());
+                        (NodeType::And, vec)
+                    }
+                    FilterSeed::Or(vec) => {
+                        trace!(kind = "OR", negate, children = vec.len());
+                        (NodeType::Or, vec)
+                    }
                     // Outer match guarantees other variants will not hit this branch
                     // TODO: maybe change to unreachable_unchecked!()
                     _ => unreachable!(),
@@ -210,6 +220,12 @@ pub enum NodeType {
 pub enum BoolExt {
     True = 1,
     False = 0,
+}
+
+impl BoolExt {
+    fn as_bool(&self) -> bool {
+        (*self).into()
+    }
 }
 
 impl From<bool> for BoolExt {

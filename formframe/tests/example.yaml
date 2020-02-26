@@ -20,6 +20,8 @@ filter:
     - any:
       - re: '(?i)hello\s+\w'
       - re: '(?i)hi\s+\w'
+  bad:
+    - any:
 map:
   some_map: "..."
 execute:
