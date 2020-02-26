@@ -8,6 +8,8 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+    - name: Code checkout
+      uses: actions/checkout@v2
     - name: Cache .cargo
       uses: actions/cache@v1
       with:
@@ -18,7 +20,6 @@ jobs:
       with:
         key: ${{ runner.os }}-target-${{ hashFiles('**/Cargo.lock') }}  
         path: target
-    - uses: actions/checkout@v2
     - name: Build
       run: cargo build --verbose
     - name: Run tests
