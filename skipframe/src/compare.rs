@@ -22,7 +22,7 @@ pub fn by_priority(a: &DirEntry, b: &DirEntry) -> Ordering {
 
 /// Representation of a relevant dir entry's relative run priority
 /// with the ordering: Higher Number > Lower Number > No Number
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub enum Priority {
     Number(u64),
     None,

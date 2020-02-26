@@ -1,9 +1,9 @@
 use {
+    crate::prelude::*,
     serde::ser::{SerializeMap, Serializer},
-    //crate::prelude::*,
     serde::Serialize,
     serde_interface::{DataContext, Marker, TagMarker},
-    std::sync::Arc,
+    std::{fmt, sync::Arc},
 };
 
 /// Contextual information for interpreting associated data
@@ -34,6 +34,19 @@ impl std::fmt::Display for Directive {
             Self::Stdout => "STDOUT",
             Self::Stderr => "STDERR",
             Self::End => "END",
+        };
+
+        write!(f, "{}", x)
+    }
+}
+
+impl SpanDisplay for Directive {
+    fn span_print(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let x = match self {
+            Self::Begin => "Begin",
+            Self::Stdout => "Stdout",
+            Self::Stderr => "Stderr",
+            Self::End => "End",
         };
 
         write!(f, "{}", x)
@@ -98,7 +111,7 @@ impl<'out, I> Serialize for AsMapSerialize<I>
 where
     I: Iterator<Item = &'out Item<'out>>,
 {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
         S: Serializer,
     {

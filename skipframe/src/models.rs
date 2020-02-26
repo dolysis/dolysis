@@ -3,7 +3,7 @@ use {
         compare::{by_priority, Priority},
         output::OutputContext,
         prelude::*,
-        process::{process_child, serialize_error, spawn_process},
+        process::{process_child, spawn_process},
         ARGS,
     },
     bytes::Bytes,
@@ -11,17 +11,17 @@ use {
     futures::{
         channel::mpsc::{Receiver as AsyncReceiver, Sender as AsyncSender},
         io::Cursor,
-        sink::SinkExt,
-        stream::{StreamExt, TryStreamExt},
+        prelude::*,
     },
     rayon::{iter::ParallelBridge, prelude::*},
     serde_interface::{Record, RecordFrame, RecordInterface},
     std::{
-        convert::TryFrom, marker::Unpin, os::unix::fs::PermissionsExt, path::Path, process::Child,
-        thread,
+        convert::TryFrom, fmt, marker::Unpin, os::unix::fs::PermissionsExt, path::Path,
+        process::Child, thread,
     },
     tokio::net::TcpStream,
     tokio_util::compat::FuturesAsyncReadCompatExt,
+    tracing_subscriber::{EnvFilter, FmtSubscriber},
     walkdir::{DirEntry, WalkDir},
 };
 
@@ -33,6 +33,7 @@ pub type WriteChannel = Bytes;
 /// _and is already sorted_. It will attempt to run anything of the same Priority in parallel
 /// given there are system resources to do so. After serializing it sends the byte buffer to
 /// a channel whose receiver is responsible for writing the data out
+#[instrument(skip(f, writer_tx, child_tx))]
 pub fn process_list<F, I>(f: F, writer_tx: AsyncSender<WriteChannel>, child_tx: Sender<Child>)
 where
     F: FnOnce() -> I,
@@ -80,14 +81,16 @@ where
     .for_each_with(
         (fctl_tx, writer_tx.clone(), child_tx),
         |(fctl, writer, child), result| {
+            enter!(always_span!("rayon"));
             result
                 .and_then(|(entry, mut bld)| {
                     spawn_process(entry.path()).and_then(|handle| {
+                        enter!(always_span!("child.process", path = %entry.path().display(), pid = handle.id()));
                         bld.insert_pid(handle.id());
                         process_child(handle, &bld, writer, child)
                     })
                 })
-                .unwrap_or_else(|e| serialize_error(e, writer));
+                .unwrap_or_else(|e| {e.log(Level::ERROR);});
 
             fctl.send(())
                 .expect("Flow control rx cannot close before the tx");
@@ -127,10 +130,19 @@ where
         })
 }
 
-/// Spawns a worker that handles all outbound writing done by this program
-// pub fn worker_write(rx_writer: Receiver<WriteChannel>) -> thread::JoinHandle<Result<()>> {
-//     thread::spawn(move || write_select(rx_writer))
-// }
+/// Initialize the global logger. This function must be called before ARGS is initialized,
+/// otherwise logs generated during CLI parsing will be silently ignored
+pub fn init_logging() {
+    let root_subscriber = FmtSubscriber::builder()
+        .with_writer(std::io::stderr)
+        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+            EnvFilter::default().add_directive(tracing_subscriber::filter::LevelFilter::INFO.into())
+        }))
+        .with_filter_reloading()
+        .finish();
+    tracing::subscriber::set_global_default(root_subscriber).expect("Failed to init logging");
+    info!("<== Logs Start ==>")
+}
 
 /// Receives all child processes that the main program is finished with and waits
 /// them. This is required on some architectures for the OS to release system resources.
@@ -138,8 +150,16 @@ where
 /// to avoid blocking
 pub fn worker_wait(rx_child: Receiver<Child>) -> thread::JoinHandle<Result<()>> {
     thread::spawn(move || {
+        enter!(always_span!("child.cemetary"));
         for mut child in rx_child.iter() {
-            let _ = child.wait();
+            let id = child.id();
+            match child.wait() {
+                Ok(status) if !status.success() => warn!(pid = id, %status),
+                Ok(status) => debug!(pid = id, %status),
+                Err(e) => {
+                    CrateError::from(e).log(Level::WARN);
+                }
+            }
         }
 
         Ok(())
@@ -152,8 +172,19 @@ pub async fn write_select(rx_writer: AsyncReceiver<WriteChannel>) -> Result<()> 
         (Some(socket), _, _) => {
             if cfg!(target_family = "unix") {
                 use tokio::net::UnixStream;
-                let mut socket = UnixStream::connect(socket).await?;
-                write_cbor(rx_writer, &mut socket).await
+                async {
+                    debug!("Attempting socket connection...");
+                    UnixStream::connect(socket)
+                        .map_err(CrateError::from)
+                        .inspect(|res| match res {
+                            Ok(_) => info!("Connection established"),
+                            Err(ref e) => e.ref_log(Level::ERROR),
+                        })
+                        .and_then(|socket| write_cbor(rx_writer, socket))
+                        .await
+                }
+                .instrument(always_span!("unixstream", socket = %socket.display()))
+                .await
             } else {
                 // Should not be possible to hit this path as con_socket() should always return None on
                 // non-unix systems
@@ -161,10 +192,24 @@ pub async fn write_select(rx_writer: AsyncReceiver<WriteChannel>) -> Result<()> 
             }
         }
         (_, Some(addr), _) => {
-            let mut tcp = TcpStream::connect(addr).await?;
-            write_cbor(rx_writer, &mut tcp).await
+            async {
+                TcpStream::connect(addr)
+                    .map_err(CrateError::from)
+                    .inspect(|res| match res {
+                        Ok(_) => info!("Connection established"),
+                        Err(ref e) => e.ref_log(Level::ERROR),
+                    })
+                    .and_then(|socket| write_cbor(rx_writer, socket))
+                    .await
+            }
+            .instrument(always_span!("tcp", socket = %addr))
+            .await
         }
-        (_, _, Some(_)) => write_debug(rx_writer).await,
+        (_, _, Some(_)) => {
+            write_debug(rx_writer)
+                .instrument(always_span!("debug", socket = "stdout"))
+                .await
+        }
         _ => unreachable!(),
     }
 }
@@ -180,19 +225,20 @@ where
         .forward(RecordFrame::write(buffer))
         .await?;
 
+    info!("All data written successfully, closing the connection");
+
     Ok(())
 }
 
 /// Prints to stdout, but as rust's Debug impl of the records not cbor. Should mostly be used
 /// for debugging purposes
 async fn write_debug(rx_writer: AsyncReceiver<WriteChannel>) -> Result<()> {
-    println!("Inside debug writer");
     let mut buffer = Cursor::new(Vec::new()).compat();
     {
         let mut frame = RecordFrame::read_write(&mut buffer);
 
         rx_writer
-            .inspect(|item| println!("Got an item, sized: {}", item.len()))
+            .inspect(|item| trace!("Writer received item, sized: {}", item.len()))
             .map(|item| Ok(item))
             .forward(&mut frame)
             .await?;
@@ -204,6 +250,8 @@ async fn write_debug(rx_writer: AsyncReceiver<WriteChannel>) -> Result<()> {
     while let Some(record) = record_stream.try_next().await? {
         println!("{:?}", record)
     }
+
+    info!("All data written successfully");
 
     Ok(())
 }
@@ -220,4 +268,37 @@ fn is_executable(entry: &DirEntry) -> Result<bool> {
 /// AND's exec bits
 fn mode_exec(mode: u32) -> bool {
     mode & 0o111 != 0
+}
+
+pub trait SpanDisplay {
+    fn span_print(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result;
+
+    fn span_display(&self) -> LocalDisplay<Self>
+    where
+        Self: Sized,
+    {
+        LocalDisplay::new(self)
+    }
+}
+
+pub struct LocalDisplay<'a, T> {
+    owner: &'a T,
+}
+
+impl<'a, T> LocalDisplay<'a, T> {
+    pub fn new(owner: &'a T) -> Self
+    where
+        T: SpanDisplay,
+    {
+        Self { owner }
+    }
+}
+
+impl<'a, T> fmt::Display for LocalDisplay<'a, T>
+where
+    T: SpanDisplay,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.owner.span_print(f)
+    }
 }
