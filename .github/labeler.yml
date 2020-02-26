@@ -1,0 +1,17 @@
+@formframe
+  - formframe/**/*
+  
+@skipframe
+  - skipframe/**/*
+
+@loopframe
+  - loopframe/**/*
+
+@interface
+  - serde_interface/**/*
+
+dep-change
+  - **/Cargo.lock
+
+workflow
+  - .github/**/*
