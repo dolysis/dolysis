@@ -192,7 +192,7 @@ impl<'de> Deserialize<'de> for Data {
             }
         }
 
-        const FIELDS: &'static [&'static str] = &["required", "time", "id", "pid", "data"];
+        const FIELDS: &[&str] = &["required", "time", "id", "pid", "data"];
         deserializer.deserialize_struct("Data", FIELDS, DataVisitor)
     }
 }
@@ -268,7 +268,7 @@ impl<'de> Deserialize<'de> for Header {
             }
         }
 
-        const FIELDS: &'static [&'static str] = &["required", "time", "id", "pid"];
+        const FIELDS: &[&str] = &["required", "time", "id", "pid"];
         deserializer.deserialize_struct("Header", FIELDS, HeaderVisitor)
     }
 }
@@ -332,7 +332,7 @@ impl<'de> Deserialize<'de> for Error {
             }
         }
 
-        const FIELDS: &'static [&'static str] = &["required", "error"];
+        const FIELDS: &[&str] = &["required", "error"];
         deserializer.deserialize_struct("Error", FIELDS, ErrorVisitor)
     }
 }
@@ -397,7 +397,7 @@ impl<'de> Deserialize<'de> for Log {
             }
         }
 
-        const FIELDS: &'static [&'static str] = &["required", "log"];
+        const FIELDS: &[&str] = &["required", "log"];
         deserializer.deserialize_struct("Log", FIELDS, LogVisitor)
     }
 }

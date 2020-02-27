@@ -202,8 +202,7 @@ where
     fn start_send(mut self: Pin<&mut Self>, item: T) -> Result<(), Self::Error> {
         let mkr = SymmetricalCbor::<T>::default();
         pin_mut!(mkr);
-        let res = mkr.serialize(&item);
-        let bytes = res.map_err(|e| e.into())?;
+        let bytes = mkr.serialize(&item)?;
 
         self.as_mut().project().inner.start_send(bytes)?;
         Ok(())
@@ -241,7 +240,7 @@ where
     type Error = io::Error;
 
     fn deserialize(self: Pin<&mut Self>, src: &BytesMut) -> Result<Item, Self::Error> {
-        serde_cbor::from_slice(src.as_ref()).map_err(|e| into_io_error(e))
+        serde_cbor::from_slice(src.as_ref()).map_err(into_io_error)
     }
 }
 
@@ -253,7 +252,7 @@ where
 
     fn serialize(self: Pin<&mut Self>, item: &SinkItem) -> Result<Bytes, Self::Error> {
         serde_cbor::to_vec(item)
-            .map_err(|e| into_io_error(e))
+            .map_err(into_io_error)
             .map(Into::into)
     }
 }
