@@ -3,7 +3,6 @@ name: Quick tests
 on:
   push:
     branches-ignore: 
-      - develop
       - master
 
 jobs:
@@ -15,24 +14,43 @@ jobs:
     steps:
     - name: Set git auth
       run: git config --global url."https://api:${{ secrets.GITHUB_TOKEN }}@github.com/".insteadOf "https://github.com/"
+      
     - name: Code checkout
       uses: actions/checkout@v2
-    - name: Cache .cargo
+      
+    - name: Cache .cargo binaries
+      id: bincache
       uses: actions/cache@v1
       with:
-        path: ~/.cargo
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-    - name: Cache target
+        path: ~/.cargo/bin
+        key: ${{ runner.os }}-cargo-bin-${{ env.ci_bin_list }}
+      env:
+        ci_bin_list: "cache"  
+        
+    - name: Cache .cargo registry
       uses: actions/cache@v1
+      if: steps.bincache.outputs.cache-hit = 'true'
       with:
-        key: ${{ runner.os }}-target-${{ hashFiles('**/Cargo.lock') }}  
-        path: target
+        path: ~/.cargo/registry
+        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('*/**/Cargo.lock') }}
+        
+    - name: Cache .cargo git
+      uses: actions/cache@v1
+      if: steps.bincache.outputs.cache-hit = 'true'
+      with:
+        path: ~/.cargo/git
+        key: ${{ runner.os }}-cargo-git-${{ hashFiles('*/**/Cargo.lock') }}
+        
     - name: Build
-      run: cargo build
+      run: cargo 
+      
     - name: Run tests
       run: cargo test
+      
     - name: Cleanup cache
       run: |
-        find target -ignore_readdir_race -depth -wholename '**/incremental/*' -delete
-        find target -ignore_readdir_race -depth -wholename '**/examples/*' -delete
+        $bincache || cargo install cargo-cache --no-default-features --features ci-autoclean cargo-cache
+        cargo cache
       continue-on-error: true
+      env:
+        bincache: ${{ steps.bincache.outputs.cache-hit }}
