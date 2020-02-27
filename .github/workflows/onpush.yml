@@ -1,4 +1,4 @@
-name: OnPush
+name: Quick tests
 
 on:
   push:
@@ -15,8 +15,6 @@ jobs:
     steps:
     - name: Set git auth
       run: git config --global url."https://api:${{ secrets.GITHUB_TOKEN }}@github.com/".insteadOf "https://github.com/"
-    - name: Debuging
-      run: git config -l | grep .
     - name: Code checkout
       uses: actions/checkout@v2
     - name: Cache .cargo
@@ -30,9 +28,9 @@ jobs:
         key: ${{ runner.os }}-target-${{ hashFiles('**/Cargo.lock') }}  
         path: target
     - name: Build
-      run: cargo build --verbose
+      run: cargo build
     - name: Run tests
-      run: cargo test --verbose
+      run: cargo test
     - name: Cleanup cache
       run: |
         find target -ignore_readdir_race -depth -wholename '**/incremental/*' -delete
