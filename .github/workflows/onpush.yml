@@ -14,7 +14,9 @@ jobs:
 
     steps:
     - name: Set git auth
-      run: git config --global url."https://${{ secrets.GITHUB_TOKEN }}@github.com/".insteadOf "https://github.com/"
+      run: git config --global url."https://api:${{ secrets.GITHUB_TOKEN }}@github.com/".insteadOf "https://github.com/"
+    - name: Debuging
+      run: git config -l | grep .
     - name: Code checkout
       uses: actions/checkout@v2
     - name: Cache .cargo
