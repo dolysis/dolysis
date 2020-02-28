@@ -7,8 +7,6 @@
   - [Technical](#technical)
   - [Philosophy](#philosophy)
 
-[[TOC]]
-
 ## Shorts
 
 ## Technical
