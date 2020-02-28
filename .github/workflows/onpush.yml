@@ -9,7 +9,10 @@ jobs:
   build:
 
     runs-on: ubuntu-latest
-    if: "!contains(github.event.head_commit.message, 'no ci') || !contains(github.event.head_commit.message, 'skip ci')"
+    if: >
+      !contains(github.event.head_commit.message, 'no ci') 
+      || !contains(github.event.head_commit.message, 'skip ci')
+      || !contains(github.event.head_commit.message, 'ci skip')
 
     steps:
     - name: Set git auth
