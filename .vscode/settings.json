@@ -1,0 +1,19 @@
+{
+    "cSpell.languageSettings": [
+        {
+            "enabled": true,
+            "languageId": [
+                "toml"
+            ]
+        },
+        {
+            "enabled": true,
+            "languageId": [
+                "rust"
+            ]
+        }
+    ],
+    "cSpell.words": [
+        "dolysis"
+    ]
+}
