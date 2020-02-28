@@ -34,6 +34,28 @@ pub fn check_args() -> MainResult<()> {
     }
 }
 
+pub trait ResultInspect {
+    type Item;
+
+    fn inspect<F>(self, f: F) -> Self
+    where
+        Self: Sized,
+        F: FnMut(&Self::Item);
+}
+
+impl<T, E> ResultInspect for std::result::Result<T, E> {
+    type Item = Self;
+
+    fn inspect<F>(self, mut f: F) -> Self
+    where
+        Self: Sized,
+        F: FnMut(&Self::Item),
+    {
+        f(&self);
+        self
+    }
+}
+
 pub trait SpanDisplay {
     fn span_print(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result;
 
