@@ -47,7 +47,7 @@ jobs:
         key: ${{ runner.os }}-cargo-git-${{ hashFiles('*/**/Cargo.lock') }}
         
     - name: Build
-      run: cargo 
+      run: cargo build
       
     - name: Run tests
       run: cargo test
@@ -58,4 +58,4 @@ jobs:
         cargo cache
       continue-on-error: true
       env:
-        bincache: ${{ steps.bincache.outputs.cache-hit }}
+        bincache: ${{ steps.bincache.outputs.cache-hit == 'true'}}

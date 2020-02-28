@@ -21,11 +21,13 @@ mod prelude {
         crate::{
             cli, enter,
             error::{CrateError, CrateResult, LogError},
+            models::ResultInspect as _,
         },
         tracing::{
-            debug, debug_span, error, error_span as always_span, info, info_span, instrument,
-            trace, trace_span, warn, Level,
+            debug, debug_span, error, error_span as always_span, field, info, info_span,
+            instrument, trace, trace_span, warn, Level,
         },
+        tracing_futures::Instrument as _,
     };
 }
 

@@ -139,7 +139,7 @@ impl From<&Err> for Category {
 }
 
 impl SpanDisplay for Category {
-    fn span_output(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn span_print(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Io => write!(f, "IO"),
             Self::Config => write!(f, "Config"),

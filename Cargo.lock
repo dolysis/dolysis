@@ -185,13 +185,13 @@ name = "formframe"
 version = "0.1.2"
 dependencies = [
  "clap",
+ "futures",
  "generational-arena",
  "lazy_static",
  "once_cell",
- "rayon",
+ "pin-project",
  "regex",
  "serde",
- "serde_cbor",
  "serde_interface 0.2.0",
  "serde_yaml",
  "smallvec",
