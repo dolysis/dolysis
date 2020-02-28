@@ -2,8 +2,10 @@ name: Quick tests
 
 on:
   push:
-    branches-ignore: 
+    branches-ignore:
       - master
+    paths-ignore:
+      - 'docs/**'
 
 jobs:
   build:
