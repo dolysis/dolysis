@@ -1,6 +1,5 @@
 use {
     crate::prelude::{CrateResult as Result, *},
-    serde_cbor::Deserializer,
     serde_interface::Record,
     tokio::net::TcpListener,
 };

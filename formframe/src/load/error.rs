@@ -62,7 +62,7 @@ impl From<&Err> for Category {
 }
 
 impl SpanDisplay for Category {
-    fn span_output(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn span_print(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Yaml => write!(f, "Yaml"),
             Self::FilterSyntax => write!(f, "FilterSyntax"),

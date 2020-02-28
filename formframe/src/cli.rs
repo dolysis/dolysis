@@ -132,7 +132,7 @@ enum DebugInputKind {
 }
 
 impl SpanDisplay for DebugInputKind {
-    fn span_output(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn span_print(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Stdin => write!(f, "stdin"),
             Self::File(path) => write!(f, "{}", path.display()),

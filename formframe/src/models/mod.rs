@@ -35,48 +35,34 @@ pub fn check_args() -> MainResult<()> {
 }
 
 pub trait SpanDisplay {
-    fn span_output(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result;
+    fn span_print(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result;
 
-    fn span_write<'a, F>(&'a self, f: &'a F) -> LocalDisplay<Self>
-    where
-        Self: Sized,
-        F: Fn(&Self, &mut fmt::Formatter<'_>) -> fmt::Result,
-    {
-        LocalDisplay::new(self, f)
-    }
-
-    fn span_display<'a>(&'a self) -> LocalDisplay<Self>
+    fn span_display(&self) -> LocalDisplay<Self>
     where
         Self: Sized,
     {
-        self.span_write(&<Self as SpanDisplay>::span_output)
+        LocalDisplay::new(self)
     }
 }
 
 pub struct LocalDisplay<'a, T> {
     owner: &'a T,
-    display: &'a dyn Fn(&'a T, &mut fmt::Formatter<'_>) -> fmt::Result,
 }
 
 impl<'a, T> LocalDisplay<'a, T> {
-    pub fn new<F>(owner: &'a T, args: &'a F) -> Self
+    pub fn new(owner: &'a T) -> Self
     where
-        F: Fn(&'a T, &mut fmt::Formatter<'_>) -> fmt::Result,
+        T: SpanDisplay,
     {
-        Self {
-            owner,
-            display: args,
-        }
+        Self { owner }
     }
-
-    // pub fn as_display(&'a self) -> impl fmt::Display + 'a {
-    //     self
-    // }
 }
 
-impl<'a, T> fmt::Display for LocalDisplay<'a, T> {
+impl<'a, T> fmt::Display for LocalDisplay<'a, T>
+where
+    T: SpanDisplay,
+{
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let output = self.display;
-        output(self.owner, f)
+        self.owner.span_print(f)
     }
 }
