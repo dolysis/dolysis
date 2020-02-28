@@ -29,14 +29,14 @@ jobs:
         
     - name: Cache .cargo registry
       uses: actions/cache@v1
-      if: steps.bincache.outputs.cache-hit = 'true'
+      if: steps.bincache.outputs.cache-hit == 'true'
       with:
         path: ~/.cargo/registry
         key: ${{ runner.os }}-cargo-registry-${{ hashFiles('*/**/Cargo.lock') }}
         
     - name: Cache .cargo git
       uses: actions/cache@v1
-      if: steps.bincache.outputs.cache-hit = 'true'
+      if: steps.bincache.outputs.cache-hit == 'true'
       with:
         path: ~/.cargo/git
         key: ${{ runner.os }}-cargo-git-${{ hashFiles('*/**/Cargo.lock') }}
