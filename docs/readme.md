@@ -7,8 +7,12 @@
   - [Technical](#technical)
   - [Philosophy](#philosophy)
 
+[[TOC]]
+
 ## Shorts
 
 ## Technical
 
-## Philosophy 
+## Philosophy
+
+* [Philosophy Overview](philosophy/readme.md)

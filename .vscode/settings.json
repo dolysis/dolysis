@@ -1,4 +1,11 @@
 {
+    "[Markdown]": {
+        "editor.wordWrap": "wordWrapColumn",
+        "editor.wordWrapColumn": 120,
+    },
+    "[jsonc]": {
+        "editor.defaultFormatter": "vscode.json-language-features"
+    },
     "cSpell.languageSettings": [
         {
             "enabled": true,
@@ -15,5 +22,10 @@
     ],
     "cSpell.words": [
         "dolysis"
-    ]
+    ],
+    "markdown.extension.toc.updateOnSave": true,
+    "prettier.useTabs": false,
+    "markdown.extension.print.absoluteImgPath": false,
+    "markdown.extension.toc.githubCompatibility": true,
+    "markdown.extension.toc.orderedList": false,
 }
