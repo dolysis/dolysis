@@ -9,6 +9,8 @@ This is a set of generic design ideals.
   - [The Big Three](#the-big-three)
     - [Simple should be Simple](#simple-should-be-simple)
       - [Example](#example)
+        - [C++](#c)
+        - [Perl](#perl)
     - [Complex should be Possible](#complex-should-be-possible)
     - [Transition must be Easy](#transition-must-be-easy)
 
@@ -22,11 +24,37 @@ To start and do something simple it should be easy and not require a complex con
 
 #### Example
 
-    Print Hello World on the terminal.
+Print `Hello World!` on the terminal.
+
+##### C++
+
+```cpp
+// the cpp source file hello-world.cpp
+#include <iostream>
+
+using namespace std;
+
+int main()
+{
+    cout << "Hello World!" << endl;
+    return 0;
+}
+```
 
 ```bash
-# For C++
+# Compile and Run C++
 
+clang -o hello-world hello-world.cpp
+./hello-world
+
+```
+
+##### Perl
+
+```bash
+# For Perl
+
+perl -E 'say "Hello World!"'
 
 ```
 

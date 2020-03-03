@@ -1,7 +1,7 @@
 {
     "[Markdown]": {
         "editor.wordWrap": "wordWrapColumn",
-        "editor.wordWrapColumn": 120,
+        "editor.wordWrapColumn": 120
     },
     "[jsonc]": {
         "editor.defaultFormatter": "vscode.json-language-features"
@@ -10,22 +10,31 @@
         {
             "enabled": true,
             "languageId": [
-                "toml"
+                "rust"
             ]
         },
         {
             "enabled": true,
             "languageId": [
-                "rust"
+                "toml"
             ]
         }
     ],
     "cSpell.words": [
-        "dolysis"
+        "cout",
+        "dolysis",
+        "endl",
+        "iostream"
     ],
-    "markdown.extension.toc.updateOnSave": true,
-    "prettier.useTabs": false,
     "markdown.extension.print.absoluteImgPath": false,
     "markdown.extension.toc.githubCompatibility": true,
     "markdown.extension.toc.orderedList": false,
+    "markdown.extension.toc.updateOnSave": true,
+    "markdownlint.config": {
+        "line-length": false,
+        "ul-style": false,
+        "code": "fenced",
+    },
+    "markdownlint.run": "onType",
+    "prettier.useTabs": false,
 }
