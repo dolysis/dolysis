@@ -1,3 +1,5 @@
+#![allow(clippy::match_bool)]
+
 use {
     crate::{
         cli::{generate_cli, ProgramArgs},

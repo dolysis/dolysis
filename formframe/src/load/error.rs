@@ -41,9 +41,9 @@ pub enum Err {
 }
 
 impl Err {
-    fn categorize(&self) -> Category {
-        self.into()
-    }
+    // fn categorize(&self) -> Category {
+    //     self.into()
+    // }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
