@@ -1,7 +1,9 @@
 use {
-    crate::prelude::{CrateResult as Result, *},
+    crate::{
+        models::{Data, LocalRecord},
+        prelude::{CrateResult as Result, *},
+    },
     futures::{
-        pin_mut,
         prelude::*,
         ready,
         stream::{Peekable, Stream},
@@ -11,7 +13,7 @@ use {
     pin_project::pin_project,
     serde_interface::{Record, RecordInterface},
     std::collections::HashMap,
-    std::pin::Pin,
+    std::{convert::TryFrom, pin::Pin},
     tokio::{
         net::TcpListener,
         prelude::*,
@@ -45,42 +47,45 @@ pub async fn listener(addr: &str) -> Result<()> {
                 |(socket, client)| {
                     tokio::spawn(
                         async move {
-                            let unbound = RecordInterface::from_read(io::BufReader::new(socket));
-                            tokio::stream::StreamExt::timeout(unbound, Duration::from_secs(60))
-                                    .take_while(|timer| future::ready(timer.is_ok()))
-                                    .filter_map(|res| match res.unwrap() {
-                                        Ok(record) => future::ready(Some(record)),
-                                        Err(e) => future::ready({
-                                            warn!(
-                                                "Invalid record detected in stream: {}... ignoring",
-                                                e
-                                            );
-                                            None
-                                        }),
-                                    })
-                                    .first_last()
-                                    .take_while(|(first, last, record)| future::ready(match record {
-                                        Record::StreamStart if !first => {
-                                            error!("Malformed stream, client sent: 'Stream Start' out of sequence... terminating connection");
-                                            false
-                                        }
-                                        Record::StreamEnd if !last => {
-                                            error!("Malformed stream, client sent: 'Stream End' out of sequence... terminating connection");
-                                            false
-                                        }
-                                        _ => true
-                                    }))
-                                    .map(|(_, _, record)| record)
-                                    .scan(HashMap::<String, Sender<Record>>::new(), |map, record| {
-                                        let out = future::ready(Some(()));
+                            handle_connection(socket)
+                            .scan(
+                                (
+                                    HashMap::<String, Sender<Data>>::new(),
+                                    HashMap::<String, Data>::new(),
+                                ),
+                                |(map, stash), record| {
+                                    let out = future::ready(Some(()));
                                         match record {
-                                            Record::Header(_) => unimplemented!(), // spawn task and pass it a channel rx while storing the tx in the hashmap
-                                            Record::Data(_) => unimplemented!(), // 
-                                            _ => out
+                                            LocalRecord::Header(header) => {
+                                                if map.contains_key(header.id.as_str()) {
+                                                    warn!("Detected duplicate header ID...");
+                                                    out
+                                                } else {
+                                                    let (tx, rx) = channel::<Data>(256);
+                                                    map.insert(header.id.clone(), tx);
+                                                    tokio::spawn(handle_join(rx));
+                                                    out
+                                                }
+                                            }
+                                            LocalRecord::Data(data) => {
+                                                let id = data.id.as_str();
+                                                if map.contains_key(id) {
+                                                    let mut tx = map.get(id).unwrap().clone();
+                                                    // This is stupid, spawning an entire task to send a single item is wasteful
+                                                    // but I can't figure out how else to make the return types 
+                                                    // of the if/else the same
+                                                    tokio::spawn(async move { tx.send(data).map_err(|e| error!("Data channel closed early: {}", e)).await });
+                                                    out
+                                                } else {
+                                                    warn!("Record stream out of sequence, data record received before header");
+                                                    stash.insert(data.id.clone(), data);
+                                                    out
+                                                }
+                                            }
                                         }
-                                    })
-                                    .collect::<()>()
-                                    .await;
+                                },
+                            )
+                            .collect::<()>()
                         }
                         .instrument(always_span!("tcp.client", client = %client)),
                     );
@@ -88,6 +93,50 @@ pub async fn listener(addr: &str) -> Result<()> {
             )
             .await
     }
+}
+
+fn handle_connection<T>(socket: T) -> impl Stream<Item = LocalRecord>
+where
+    T: tokio::io::AsyncRead + tokio::io::AsyncWrite,
+{
+    let unbound = RecordInterface::from_read(io::BufReader::new(socket));
+    tokio::stream::StreamExt::timeout(unbound, Duration::from_secs(60))
+        .take_while(|timer| future::ready(timer.is_ok()))
+        .filter_map(|res| match res.unwrap() {
+            Ok(record) => future::ready(Some(record)),
+            Err(e) => future::ready({
+                warn!(
+                    "Invalid record detected in stream: {}... ignoring",
+                    e
+                );
+                None
+            }),
+        })
+        .first_last()
+        .take_while(|(first, last, record)| future::ready(match record {
+            Record::StreamStart if !first => {
+                error!("Malformed stream, client sent: 'Stream Start' out of sequence... terminating connection");
+                false
+            }
+            Record::StreamEnd if !last => {
+                error!("Malformed stream, client sent: 'Stream End' out of sequence... terminating connection");
+                false
+            }
+            _ => true
+        }))
+        .filter_map(|(_, _, record)| future::ready(match record {
+            Record::Header(rcd) => LocalRecord::try_from(rcd).inspect(|res| if let Err(e) = res {
+                warn!("{}... discarding record", e)
+            }).ok(),
+            Record::Data(rcd) => LocalRecord::try_from(rcd).inspect(|res| if let Err(e) = res {
+                warn!("{}... discarding record", e)
+            }).ok(),
+            other => {info!(kind = %other.span_display(), "Discarding record"); None}
+        }))
+}
+
+async fn handle_join(rx: Receiver<Data>) {
+    unimplemented!()
 }
 
 pub trait FindFirstLast: Stream + Sized {

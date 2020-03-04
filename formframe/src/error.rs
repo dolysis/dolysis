@@ -1,42 +1,29 @@
 use {
-    crate::{
-        load::error::LoadError,
-        models::SpanDisplay,
-        prelude::{debug, error, info, trace, warn},
-    },
-    std::{error, fmt, io::Error as IoError},
+    crate::{load::error::LoadError, models::SpanDisplay, prelude::*},
+    serde_interface::DataContext as RecordContext,
+    std::{error, fmt, io::Error as IoError, string::FromUtf8Error},
     thiserror::Error,
 };
 
 pub type CrateResult<T> = std::result::Result<T, CrateError>;
 pub type MainResult<T> = std::result::Result<T, RefError>;
 
-// #[macro_export]
-// macro_rules! elog {
-//     (none, $err:expr) => {{
-//         use crate::error::NoLog;
-//         NoLog::from($err)
-//     }};
-//     (trace, $err:expr) => {
-//         ($err, Some(tracing::Level::TRACE)).into()
-//     };
-//     (debug, $err:expr) => {
-//         ($err, Some(tracing::Level::DEBUG)).into()
-//     };
-//     (info, $err:expr) => {
-//         ($err, Some(tracing::Level::INFO)).into()
-//     };
-//     (warn, $err:expr) => {
-//         ($err, Some(tracing::Level::WARN)).into()
-//     };
-//     (error, $err:expr) => {
-//         ($err, Some(tracing::Level::ERROR)).into()
-//     };
-// }
-
 #[derive(Debug)]
 pub struct CrateError {
     inner: Box<Err>,
+}
+
+impl CrateError {
+    pub fn err_invalid_record<T>(invalid: RecordContext, expected: T) -> Self
+    where
+        T: AsRef<[RecordContext]>,
+    {
+        Err::InvalidRecordContext {
+            invalid,
+            expected: rcxt_join(expected),
+        }
+        .into()
+    }
 }
 
 impl<E> From<E> for CrateError
@@ -115,6 +102,16 @@ pub enum Err {
         #[from]
         source: ConfigError,
     },
+    #[error("Bad record context, expected '{}' got '{}'", .expected, rcxt_display(.invalid))]
+    InvalidRecordContext {
+        invalid: RecordContext,
+        expected: String,
+    },
+    #[error("Record data is not valid UTF8: {}", .source)]
+    RecordDataInvalidUTF8 {
+        #[from]
+        source: FromUtf8Error,
+    },
 }
 
 impl Err {
@@ -127,6 +124,7 @@ impl Err {
 pub enum Category {
     Io,
     Config,
+    Record,
 }
 
 impl From<&Err> for Category {
@@ -134,16 +132,20 @@ impl From<&Err> for Category {
         match err {
             Err::Io { .. } => Self::Io,
             Err::InvalidConfig { .. } => Self::Config,
+            Err::InvalidRecordContext { .. } | Err::RecordDataInvalidUTF8 { .. } => Self::Record,
         }
     }
 }
 
 impl SpanDisplay for Category {
     fn span_print(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Io => write!(f, "IO"),
-            Self::Config => write!(f, "Config"),
-        }
+        let s = match self {
+            Self::Io => "IO",
+            Self::Config => "Config",
+            Self::Record => "Record",
+        };
+
+        write!(f, "{}", s)
     }
 }
 
@@ -211,4 +213,30 @@ impl LogError for CrateError {
         }
         self
     }
+}
+
+fn rcxt_display(cxt: &RecordContext) -> &str {
+    match cxt {
+        RecordContext::Start => "Start",
+        RecordContext::End => "End",
+        RecordContext::Stdout => "Stdout",
+        RecordContext::Stderr => "Stderr",
+    }
+}
+
+fn rcxt_join<T>(valid: T) -> String
+where
+    T: AsRef<[RecordContext]>,
+{
+    valid.as_ref().iter().identify_first_last().fold(
+        String::default(),
+        |mut out, (_, last, cxt)| {
+            match (cxt, last) {
+                (cxt, false) => out.extend([rcxt_display(cxt), ","].iter().map(|s| *s)),
+                (cxt, true) => out.extend([rcxt_display(cxt)].iter().map(|s| *s)),
+            };
+
+            out
+        },
+    )
 }
