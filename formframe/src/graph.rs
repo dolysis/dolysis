@@ -10,9 +10,10 @@ pub struct Node<T> {
 }
 
 impl<T> Node<T> {
+    #[allow(clippy::new_ret_no_self)]
     pub fn new(datum: T, arena: &mut Arena<Node<T>>) -> Index {
         arena.insert(Node {
-            datum: datum,
+            datum,
             edges: OnceCell::new(),
         })
     }
@@ -29,10 +30,6 @@ impl<T> Node<T> {
         F: Fn(&Arena<Node<T>>, &T, &[Index]) -> R,
         R: Sized + Send + Sync,
     {
-        traverse(
-            arena,
-            &self.datum,
-            self.edges.get_or_init(|| Default::default()),
-        )
+        traverse(arena, &self.datum, self.edges.get_or_init(Default::default))
     }
 }

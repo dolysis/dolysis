@@ -1,6 +1,6 @@
 [package]
 name = "serde_interface"
-version = "0.1.0"
+version = "0.3.0"
 authors = ["pSox <psox@st8l.com>"]
 edition = "2018"
 
@@ -9,3 +9,10 @@ edition = "2018"
 [dependencies]
 serde = { version = "1.0.104", features = ["derive"] }
 serde_repr = "0.1.5"
+serde_cbor = "0.11.1"
+futures = "0.3.4"
+tokio-util = { version = "0.2.*", features = ["codec"] }
+tokio = { version = "0.2.*", features = ["full"] }
+tokio-serde = "0.6.0"
+bytes = "0.5.4"
+pin-project = "0.4.8"

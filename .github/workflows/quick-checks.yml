@@ -1,0 +1,62 @@
+name: Quick checks
+
+on:
+  push:
+    branches-ignore:
+      - master
+    paths-ignore: 
+      - '.github/**'
+      - '.docs/**'
+
+jobs:
+  quick-check:
+
+    runs-on: ubuntu-latest
+    if: >
+      !contains(github.event.head_commit.message, 'no ci') 
+      || !contains(github.event.head_commit.message, 'skip ci')
+      || !contains(github.event.head_commit.message, 'ci skip')
+
+    steps:
+    # Required while project is private, otherwise local dep checkouts will fail
+    - name: Set git auth
+      run: git config --global url."https://api:${{ secrets.GITHUB_TOKEN }}@github.com/".insteadOf "https://github.com/"
+      
+    - name: Code checkout
+      uses: actions/checkout@v2
+      
+    # Attempt to draw from a two phase cache
+    - name: Cache .cargo binaries
+      id: bincache
+      uses: actions/cache@v1
+      with:
+        path: ~/.cargo/bin
+        key: ${{ runner.os }}-cargo-bin-${{ env.ci_bin_list }}
+      env:
+        ci_bin_list: "cache"  
+        
+    - name: Cache .cargo registry
+      uses: actions/cache@v1
+      if: steps.bincache.outputs.cache-hit == 'true'
+      with:
+        path: ~/.cargo/registry
+        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('*/**/Cargo.lock') }}
+        
+    - name: Cache .cargo git
+      uses: actions/cache@v1
+      if: steps.bincache.outputs.cache-hit == 'true'
+      with:
+        path: ~/.cargo/git
+        key: ${{ runner.os }}-cargo-git-${{ hashFiles('*/**/Cargo.lock') }}
+        
+      # Quick code check + format lint
+    - name: Format check
+      run: cargo fmt -- -l --check
+      
+    - name: Run checks
+      run: cargo check --message-format=short --workspace
+      
+    - name: Cleanup cache
+      run: |
+        cargo cache || cargo install cargo-cache --no-default-features --features ci-autoclean cargo-cache && cargo cache
+      continue-on-error: true

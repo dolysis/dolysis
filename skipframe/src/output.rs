@@ -1,9 +1,9 @@
 use {
+    crate::prelude::*,
     serde::ser::{SerializeMap, Serializer},
-    //crate::prelude::*,
     serde::Serialize,
     serde_interface::{DataContext, Marker, TagMarker},
-    std::sync::Arc,
+    std::{fmt, sync::Arc},
 };
 
 /// Contextual information for interpreting associated data
@@ -40,6 +40,19 @@ impl std::fmt::Display for Directive {
     }
 }
 
+impl SpanDisplay for Directive {
+    fn span_print(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let x = match self {
+            Self::Begin => "Begin",
+            Self::Stdout => "Stdout",
+            Self::Stderr => "Stderr",
+            Self::End => "End",
+        };
+
+        write!(f, "{}", x)
+    }
+}
+
 /// Container for various relevant data that should be passed to the parser
 pub struct OutputContext {
     // Note the 'static prevents adding non-owned variants
@@ -60,45 +73,19 @@ impl OutputContext {
         self.inner.push(Item::Pid(pid))
     }
 
-    pub fn as_ref(&self) -> &[Item] {
-        &self.inner
+    pub fn insert_version(&mut self, version: u32) {
+        self.inner.push(Item::Version(version))
     }
+
+    // pub fn as_ref(&self) -> &[Item] {
+    //     &self.inner
+    // }
 
     pub fn stream<'a, 'b: 'a>(
         &'b self,
         header: &'a [Item<'b>],
     ) -> impl Iterator<Item = &'a Item<'b>> {
         header.iter().chain(self.inner.iter())
-    }
-}
-
-/// Short lived glue struct for processing child process's output streams
-/// Note that 'out refers to the short lived byte slice containing the child output,
-/// whereas 'a refers to a lifetime _at least_ as long as the backing OutputContext's
-/// lifetime, but may be longer
-pub struct RefContext<'a, 'out> {
-    backing: &'a [Item<'a>],
-    data: Item<'out>,
-}
-
-impl<'a, 'out> RefContext<'a, 'out> {
-    pub fn new(backing: &'a OutputContext, data: &'out [u8]) -> Self {
-        Self {
-            backing: backing.as_ref(),
-            data: Item::Data(data),
-        }
-    }
-
-    pub fn stream(
-        &'out self,
-        header: &'out [Item<'static>],
-    ) -> impl Iterator<Item = &'out Item<'out>> {
-        header
-            .iter()
-            .chain(self.backing)
-            .map(|i| Some(i))
-            .chain(Some(&self.data).map(|d| Some(d)))
-            .filter_map(|o| o)
     }
 }
 
@@ -124,13 +111,14 @@ impl<'out, I> Serialize for AsMapSerialize<I>
 where
     I: Iterator<Item = &'out Item<'out>>,
 {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
         let mut map = serializer.serialize_map(None)?;
         let mut iter = self.inner.borrow_mut();
-        while let Some(item) = iter.next() {
+        // ref deref required circa rust 1.41.1, the compiler will not infer it
+        for item in &mut *iter {
             map.serialize_entry(&item.as_marker(), &item)?;
         }
         map.end()

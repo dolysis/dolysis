@@ -1,0 +1,4 @@
+status = ["tests-and-clippy"]
+pr_status = ["quick-check"]
+use_squash_merge = true
+timeout_sec = 480

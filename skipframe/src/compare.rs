@@ -22,7 +22,7 @@ pub fn by_priority(a: &DirEntry, b: &DirEntry) -> Ordering {
 
 /// Representation of a relevant dir entry's relative run priority
 /// with the ordering: Higher Number > Lower Number > No Number
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub enum Priority {
     Number(u64),
     None,
@@ -30,14 +30,14 @@ pub enum Priority {
 
 impl Priority {
     fn try_from_str(s: &str) -> Result<Self> {
-        let numeric = str_take_while(s, |b| is_numeric(b));
+        let numeric = str_take_while(s, |b| is_numeric(*b));
 
         if numeric.is_empty() {
             Ok(Self::None)
         } else {
             numeric
                 .parse::<u64>()
-                .map(|b| Self::Number(b))
+                .map(Self::Number)
                 .map_err(|e| e.into())
         }
     }
@@ -87,7 +87,7 @@ impl PartialOrd for Priority {
 }
 
 /// Simple wrapper around Iterator's .take_while(), specialized for strs
-fn str_take_while<'a, P>(initial: &'a str, predicate: P) -> &'a str
+fn str_take_while<P>(initial: &str, predicate: P) -> &str
 where
     P: Fn(&u8) -> bool,
 {
@@ -97,7 +97,7 @@ where
 }
 
 /// Checks if a byte is an ASCII numeric byte
-fn is_numeric(b: &u8) -> bool {
+fn is_numeric(b: u8) -> bool {
     // Use ascii values to avoid the perf penalty of inclusive range
-    (48..58).contains(b)
+    (48..58).contains(&b)
 }
