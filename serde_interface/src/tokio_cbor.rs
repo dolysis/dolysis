@@ -1,5 +1,5 @@
 use {
-    crate::spec::Record,
+    crate::record::Record,
     bytes::{Bytes, BytesMut},
     futures::{pin_mut, prelude::*, ready},
     pin_project::pin_project,
