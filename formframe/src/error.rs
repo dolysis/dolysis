@@ -232,8 +232,8 @@ where
         String::default(),
         |mut out, (_, last, cxt)| {
             match (cxt, last) {
-                (cxt, false) => out.extend([rcxt_display(cxt), ","].iter().map(|s| *s)),
-                (cxt, true) => out.extend([rcxt_display(cxt)].iter().map(|s| *s)),
+                (cxt, false) => out.extend([rcxt_display(cxt), ","].iter().copied()),
+                (cxt, true) => out.extend([rcxt_display(cxt)].iter().copied()),
             };
 
             out

@@ -65,7 +65,7 @@ pub fn serial_traverse(
         // Wait for all success / return on first error
         NodeType::And => {
             let res: Result<(), ()> = edges
-                .into_iter()
+                .iter()
                 .map(|idx| {
                     arena
                         .get(*idx)
@@ -84,7 +84,7 @@ pub fn serial_traverse(
         // Return first success / wait for all failure
         NodeType::Or => {
             let res: Result<(), ()> = edges
-                .into_iter()
+                .iter()
                 .map(|idx| {
                     arena
                         .get(*idx)
@@ -223,8 +223,8 @@ pub enum BoolExt {
 }
 
 impl BoolExt {
-    fn as_bool(&self) -> bool {
-        (*self).into()
+    fn as_bool(self) -> bool {
+        self.into()
     }
 }
 
@@ -303,5 +303,5 @@ where
 {
     let type_hint: String = Deserialize::deserialize(de)?;
 
-    Regex::new(&type_hint).map_err(|e| de::Error::custom(e))
+    Regex::new(&type_hint).map_err(de::Error::custom)
 }

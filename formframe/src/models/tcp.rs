@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use {
     crate::{
         models::{Data, LocalRecord},
@@ -62,7 +64,7 @@ pub async fn listener(addr: &str) -> Result<()> {
                                                     out
                                                 } else {
                                                     let (tx, rx) = channel::<Data>(256);
-                                                    map.insert(header.id.clone(), tx);
+                                                    map.insert(header.id, tx);
                                                     tokio::spawn(handle_join(rx));
                                                     out
                                                 }
@@ -135,7 +137,7 @@ where
         }))
 }
 
-async fn handle_join(rx: Receiver<Data>) {
+async fn handle_join(_rx: Receiver<Data>) {
     unimplemented!()
 }
 

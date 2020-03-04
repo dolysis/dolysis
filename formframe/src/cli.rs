@@ -160,12 +160,13 @@ impl Into<Subject> for &DataInit {
 }
 
 impl DataInit {
-    fn and(&self, other: Self) -> Option<()> {
-        match (self.is_set(), other.is_set()) {
-            (true, true) => Some(()),
-            (_, _) => None,
-        }
-    }
+    // Will be needed once UnixListener is implemented
+    // fn and(&self, other: Self) -> Option<()> {
+    //     match (self.is_set(), other.is_set()) {
+    //         (true, true) => Some(()),
+    //         (_, _) => None,
+    //     }
+    // }
 
     fn is_set(&self) -> bool {
         !self.is_empty()

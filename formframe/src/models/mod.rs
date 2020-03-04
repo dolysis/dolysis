@@ -33,10 +33,7 @@ pub fn check_args() -> MainResult<()> {
     let args = ARGS.as_ref();
     match args {
         Ok(_) => Ok(()),
-        Err(e) => {
-            let e = Err(e.into());
-            e
-        }
+        Err(e) => Err(e.into()),
     }
 }
 
