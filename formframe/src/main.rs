@@ -21,7 +21,7 @@ mod prelude {
         crate::{
             cli, enter,
             error::{CrateError, CrateResult, LogError},
-            models::ResultInspect as _,
+            models::{IdentifyFirstLast as _, ResultInspect as _, SpanDisplay as _},
         },
         tracing::{
             debug, debug_span, error, error_span as always_span, field, info, info_span,
