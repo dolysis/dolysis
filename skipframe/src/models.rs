@@ -41,7 +41,7 @@ where
 {
     let (fctl_tx, fctl_rx): (Sender<()>, Receiver<()>) = unbounded();
     let mut record_sink =
-        RecordInterface::new_sink(writer_tx.clone().sink_map_err(|e| CrateError::from(e)));
+        RecordInterface::new_sink(writer_tx.clone().sink_map_err(CrateError::from));
     futures::executor::block_on(record_sink.send(Record::StreamStart)).unwrap();
 
     f().scan((None, 0u64), |state, result| -> Option<Result<DirEntry>> {
@@ -221,7 +221,7 @@ where
 {
     let buffer = tokio::io::BufWriter::new(writer);
     rx_writer
-        .map(|item| Ok(item))
+        .map(Ok)
         .forward(RecordFrame::write(buffer))
         .await?;
 
@@ -239,7 +239,7 @@ async fn write_debug(rx_writer: AsyncReceiver<WriteChannel>) -> Result<()> {
 
         rx_writer
             .inspect(|item| trace!("Writer received item, sized: {}", item.len()))
-            .map(|item| Ok(item))
+            .map(Ok)
             .forward(&mut frame)
             .await?;
     }
