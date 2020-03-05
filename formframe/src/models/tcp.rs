@@ -6,7 +6,6 @@ use {
         prelude::{CrateResult as Result, *},
     },
     futures::{
-        future::Either,
         prelude::*,
         ready,
         stream::{Peekable, Stream},
@@ -20,7 +19,10 @@ use {
     tokio::{
         net::TcpListener,
         prelude::*,
-        sync::mpsc::{channel, Receiver, Sender},
+        sync::{
+            mpsc::{channel, Receiver, Sender},
+            oneshot,
+        },
         time::Duration,
     },
 };
@@ -50,42 +52,15 @@ pub async fn listener(addr: &str) -> Result<()> {
                 |(socket, client)| {
                     tokio::spawn(
                         async move {
-                            handle_connection(socket)
-                            .scan(HashMap::<String, Sender<Data>>::new(),
-                                |map, record| {
-                                    let out = future::ready(Some(()));
-                                        match record {
-                                            LocalRecord::Header(header) => {
-                                                if map.contains_key(header.id.as_str()) {
-                                                    warn!("Detected duplicate header ID...");
-                                                    Either::Left(out)
-                                                } else {
-                                                    let (tx, rx) = channel::<Data>(256);
-                                                    map.insert(header.id, tx);
-                                                    tokio::spawn(handle_join(rx));
-                                                    Either::Left(out)
-                                                }
-                                            }
-                                            LocalRecord::Data(data) => {
-                                                let id = data.id.as_str();
-                                                if map.contains_key(id) {
-                                                    let mut tx = map.get(id).unwrap().clone();
-                                                    // Required to force send() to take by self not &mut self
-                                                    let tx = async move {
-                                                        tx.send(data).await
-                                                    };
-                                                    Either::Right(tx.map_ok(Some).unwrap_or_else(|e| Some(warn!("data RX hung up unexpectedly: {}", e))))
-                                                } else {
-                                                    warn!("Record stream out of sequence, data record received before header");
-                                                    Either::Left(out)
-                                                }
-                                            }
-                                        }
-                                },
-                            )
-                            .collect::<()>().await;
+                            let (tx_out, rx_out) = channel::<usize>(256);
+                            let input =
+                                handle_connection(socket).then(|stream| join_with(stream, tx_out));
+                            let output = rx_out.for_each(|_item| future::ready(()));
+
+                            // Await both the joined records and the final output
+                            tokio::join!(tokio::spawn(input), tokio::spawn(output))
                         }
-                        .instrument(always_span!("tcp.client", client = %client)),
+                        .instrument(always_span!("tcp.handler", client = %client)),
                     );
                 },
             )
@@ -93,7 +68,7 @@ pub async fn listener(addr: &str) -> Result<()> {
     }
 }
 
-fn handle_connection<T>(socket: T) -> impl Stream<Item = LocalRecord>
+async fn handle_connection<T>(socket: T) -> impl Stream<Item = LocalRecord>
 where
     T: tokio::io::AsyncRead + tokio::io::AsyncWrite,
 {
@@ -133,7 +108,41 @@ where
         }))
 }
 
-async fn handle_join(_rx: Receiver<Data>) {
+async fn join_with<St>(stream: St, joined_tx: Sender<usize>)
+where
+    St: Stream<Item = LocalRecord>,
+{
+    let mut map = HashMap::<String, Sender<Data>>::new();
+    futures::pin_mut!(stream);
+
+    while let Some(record) = stream.next().await {
+        match record {
+            LocalRecord::Header(header) => {
+                if map.contains_key(header.id.as_str()) {
+                    warn!("Detected duplicate header ID...");
+                } else {
+                    let (tx, rx) = channel::<Data>(256);
+                    map.insert(header.id, tx);
+                    tokio::spawn(handle_join(rx, joined_tx.clone()));
+                }
+            }
+            LocalRecord::Data(data) => {
+                let id = data.id.as_str();
+                if map.contains_key(id) {
+                    map.get_mut(id)
+                        .unwrap()
+                        .send(data)
+                        .unwrap_or_else(|e| error!("join TX closed unexpectedly: {}", e))
+                        .await;
+                } else {
+                    warn!("Record stream out of sequence, data record received before header, discarding")
+                }
+            }
+        }
+    }
+}
+
+async fn handle_join(_rx: Receiver<Data>, joined_tx: Sender<usize>) {
     unimplemented!()
 }
 
