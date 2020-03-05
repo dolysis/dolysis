@@ -6,6 +6,7 @@ use {
         prelude::{CrateResult as Result, *},
     },
     futures::{
+        future::Either,
         prelude::*,
         ready,
         stream::{Peekable, Stream},
@@ -50,44 +51,39 @@ pub async fn listener(addr: &str) -> Result<()> {
                     tokio::spawn(
                         async move {
                             handle_connection(socket)
-                            .scan(
-                                (
-                                    HashMap::<String, Sender<Data>>::new(),
-                                    HashMap::<String, Data>::new(),
-                                ),
-                                |(map, stash), record| {
+                            .scan(HashMap::<String, Sender<Data>>::new(),
+                                |map, record| {
                                     let out = future::ready(Some(()));
                                         match record {
                                             LocalRecord::Header(header) => {
                                                 if map.contains_key(header.id.as_str()) {
                                                     warn!("Detected duplicate header ID...");
-                                                    out
+                                                    Either::Left(out)
                                                 } else {
                                                     let (tx, rx) = channel::<Data>(256);
                                                     map.insert(header.id, tx);
                                                     tokio::spawn(handle_join(rx));
-                                                    out
+                                                    Either::Left(out)
                                                 }
                                             }
                                             LocalRecord::Data(data) => {
                                                 let id = data.id.as_str();
                                                 if map.contains_key(id) {
                                                     let mut tx = map.get(id).unwrap().clone();
-                                                    // This is stupid, spawning an entire task to send a single item is wasteful
-                                                    // but I can't figure out how else to make the return types 
-                                                    // of the if/else the same
-                                                    tokio::spawn(async move { tx.send(data).map_err(|e| error!("Data channel closed early: {}", e)).await });
-                                                    out
+                                                    // Required to force send() to take by self not &mut self
+                                                    let tx = async move {
+                                                        tx.send(data).await
+                                                    };
+                                                    Either::Right(tx.map_ok(Some).unwrap_or_else(|e| Some(warn!("data RX hung up unexpectedly: {}", e))))
                                                 } else {
                                                     warn!("Record stream out of sequence, data record received before header");
-                                                    stash.insert(data.id.clone(), data);
-                                                    out
+                                                    Either::Left(out)
                                                 }
                                             }
                                         }
                                 },
                             )
-                            .collect::<()>()
+                            .collect::<()>().await;
                         }
                         .instrument(always_span!("tcp.client", client = %client)),
                     );
