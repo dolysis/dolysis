@@ -1,5 +1,5 @@
 use {
-    super::join::JoinSet,
+    super::filter::JoinSet,
     crate::{models::SpanDisplay, prelude::error},
     serde_yaml::Error as YamlError,
     std::{error, fmt},
