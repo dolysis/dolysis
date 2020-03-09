@@ -75,7 +75,6 @@ impl JoinSet {
                 (None, _) => break,
             }
         }
-
         write!(f, "]")
     }
 }
@@ -272,7 +271,7 @@ impl Join for While {
     where
         F: Fn(Index) -> bool,
     {
-        // No state required for While only
+        // No state required for While
         f(self.0)
     }
 }

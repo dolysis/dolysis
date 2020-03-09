@@ -91,7 +91,7 @@ impl fmt::Display for JiiDisplay {
         JoinSet::print_valid_input(f)?;
         write!(
             f,
-            ", got: ({}, {}, {})",
+            ", got: ({}, {}, {}) where (x, y, z) = (Start, While, End)",
             (self.0).1 as u8,
             (self.0).1 as u8,
             (self.0).2 as u8,
