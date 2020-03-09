@@ -88,7 +88,7 @@ impl ProgramArgs {
             .try_for_each(|res| {
                 res.map_err(|e| e.into())
                     .and_then(|ref f| {
-                        FilterSet::try_new(f)
+                        FilterSet::new_filter(f)
                             .map_err(|e| ConfigError::Other(e).into())
                             .and_then(|fset| filter.checked_set(DataInit::from(fset)))
                     })

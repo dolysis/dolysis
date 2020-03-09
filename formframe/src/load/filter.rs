@@ -5,10 +5,8 @@ use {
     regex::Regex,
     serde::{de, Deserialize, Deserializer},
     serde_yaml::from_reader as read_yaml,
-    std::{collections::HashMap, io},
+    std::{collections::HashMap, fmt, io},
 };
-
-pub use serial_traverse as is_match;
 
 #[derive(Debug)]
 pub struct FilterSet {
@@ -17,11 +15,11 @@ pub struct FilterSet {
 }
 
 impl FilterSet {
-    pub fn try_new<R>(data: R) -> Result<Self, LoadError>
+    pub fn new_filter<R>(data: R) -> Result<Self, LoadError>
     where
         R: io::Read,
     {
-        let wrap: FWrap = read_yaml(data)?;
+        let wrap: FilterWrap = read_yaml(data)?;
 
         trace!("Yaml syntax valid");
 
@@ -290,13 +288,6 @@ pub enum FilterSeed {
     Regex(Regex),
 }
 
-#[derive(Deserialize, Debug)]
-struct FWrap {
-    filter: DeIntermediate,
-}
-
-type DeIntermediate = HashMap<String, Vec<FilterSeed>>;
-
 fn de_regex<'de, D>(de: D) -> Result<Regex, D::Error>
 where
     D: Deserializer<'de>,
@@ -305,3 +296,10 @@ where
 
     Regex::new(&type_hint).map_err(de::Error::custom)
 }
+
+#[derive(Deserialize, Debug)]
+struct FilterWrap {
+    filter: FilterIntermediate,
+}
+
+type FilterIntermediate = HashMap<String, Vec<FilterSeed>>;

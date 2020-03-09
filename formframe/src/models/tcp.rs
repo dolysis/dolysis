@@ -1,4 +1,4 @@
-#![allow(dead_code)]
+//#![allow(dead_code)]
 
 use {
     crate::{
@@ -45,11 +45,11 @@ pub async fn listener(addr: &str) -> Result<()> {
     loop {
         listener
             .accept()
-            .inspect_ok(|(_, client)| debug!("Accepted connection from: {}", client))
-            .inspect_err(|e| error!("Failed to accept connection: {}", e))
             .map_ok_or_else(
-                |_| (),
+                |e| error!("Failed to accept connection: {}", e),
                 |(socket, client)| {
+                    debug!("Accepted connection from: {}", client);
+
                     tokio::spawn(
                         async move {
                             let (tx_out, rx_out) = channel::<usize>(256);
@@ -112,7 +112,7 @@ async fn join_with<St>(stream: St, joined_tx: Sender<usize>)
 where
     St: Stream<Item = LocalRecord>,
 {
-    let mut map = HashMap::<String, Sender<Data>>::new();
+    let mut map = HashMap::<String, Sender<LocalRecord>>::new();
     futures::pin_mut!(stream);
 
     while let Some(record) = stream.next().await {
@@ -121,8 +121,12 @@ where
                 if map.contains_key(header.id.as_str()) {
                     warn!("Detected duplicate header ID...");
                 } else {
-                    let (tx, rx) = channel::<Data>(256);
-                    map.insert(header.id, tx);
+                    let (mut tx, rx) = channel::<LocalRecord>(256);
+                    let id = header.id.clone();
+                    tx.send(LocalRecord::Header(header))
+                        .unwrap_or_else(|e| error!("join TX closed unexpectedly: {}", e))
+                        .await;
+                    map.insert(id, tx);
                     tokio::spawn(handle_join(rx, joined_tx.clone()));
                 }
             }
@@ -131,7 +135,7 @@ where
                 if map.contains_key(id) {
                     map.get_mut(id)
                         .unwrap()
-                        .send(data)
+                        .send(LocalRecord::Data(data))
                         .unwrap_or_else(|e| error!("join TX closed unexpectedly: {}", e))
                         .await;
                 } else {
@@ -142,7 +146,7 @@ where
     }
 }
 
-async fn handle_join(_rx: Receiver<Data>, joined_tx: Sender<usize>) {
+async fn handle_join(_rx: Receiver<LocalRecord>, joined_tx: Sender<usize>) {
     unimplemented!()
 }
 
