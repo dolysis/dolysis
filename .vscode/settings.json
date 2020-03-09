@@ -21,10 +21,21 @@
         }
     ],
     "cSpell.words": [
+        "Peekable",
         "cout",
         "dolysis",
         "endl",
-        "iostream"
+        "formframe",
+        "fset",
+        "intos",
+        "iostream",
+        "loopframe",
+        "repr",
+        "serde",
+        "skipframe",
+        "subcommand",
+        "thiserror",
+        "unixsocket"
     ],
     "markdown.extension.print.absoluteImgPath": false,
     "markdown.extension.toc.githubCompatibility": true,
