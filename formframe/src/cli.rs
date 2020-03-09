@@ -2,7 +2,7 @@
 use {
     crate::{
         error::{CfgErrSubject as Subject, ConfigError},
-        load::filter::FilterSet,
+        load::filter::{FilterSet, JoinSet},
         models::SpanDisplay,
         prelude::{CrateResult as Result, *},
     },
@@ -47,6 +47,7 @@ pub fn generate_cli<'a, 'b>() -> App<'a, 'b> {
 
 pub struct ProgramArgs {
     filter: FilterSet,
+    join: JoinSet,
     input_type: DebugInputKind,
 }
 
@@ -74,9 +75,10 @@ impl ProgramArgs {
         trace!(source = %input_type.span_display(), "Reading input from...");
 
         let mut filter = DataInit::Filter(None);
+        let mut join = DataInit::Join(None);
 
         store.values_of("config-file").map(|iter| {
-            enter!(span, debug_span!("cfg.load", file = ""));
+            enter!(span, debug_span!("cfg.load", file = field::Empty));
             // We allow the user to specify multiple files with a requirement that somewhere in
             // these files are all the required config options. Which means that if we can't open a file,
             // or if the file is invalid yaml we shouldn't give up because other files may contain the
@@ -85,22 +87,33 @@ impl ProgramArgs {
                 span.record("file", &s);
                 File::open(s)
             })
-            .try_for_each(|res| {
-                res.map_err(|e| e.into())
-                    .and_then(|ref f| {
-                        FilterSet::new_filter(f)
+            .for_each(|file_r| {
+                let _e = file_r
+                    .and_then(|ref file| {
+                        // Check current file for a FilterSet
+                        let _e = FilterSet::new_filter(file)
                             .map_err(|e| ConfigError::Other(e).into())
                             .and_then(|fset| filter.checked_set(DataInit::from(fset)))
+                            .log(Level::DEBUG);
+
+                        // Check current file for a JoinSet
+                        let _e = JoinSet::new_filter(file)
+                            .map_err(|e| ConfigError::Other(e).into())
+                            .and_then(|jset| join.checked_set(DataInit::from(jset)))
+                            .log(Level::DEBUG);
+
+                        Ok(())
                     })
-                    .log(Level::WARN)
+                    .map_err(|e| e.into())
+                    .log(Level::WARN);
             })
         });
 
-        // When we implement more objects it will be filter.and(...).and(...)...is_some()
         // Check to make sure we have all the required information
-        if filter.is_set() {
+        if filter.status().and(join.status()).is_some() {
             Ok(Self {
-                filter: filter.into_filter().unwrap(),
+                filter: filter.into_filter(),
+                join: join.into_join(),
                 input_type,
             })
         } else {
@@ -110,6 +123,10 @@ impl ProgramArgs {
 
     pub fn get_filter(&self) -> &FilterSet {
         &self.filter
+    }
+
+    pub fn get_join(&self) -> &JoinSet {
+        &self.join
     }
 
     pub fn get_input(&self) -> Option<&Path> {
@@ -143,6 +160,7 @@ impl SpanDisplay for DebugInputKind {
 #[derive(Debug)]
 enum DataInit {
     Filter(Option<FilterSet>),
+    Join(Option<JoinSet>),
 }
 
 impl From<FilterSet> for DataInit {
@@ -151,10 +169,17 @@ impl From<FilterSet> for DataInit {
     }
 }
 
+impl From<JoinSet> for DataInit {
+    fn from(set: JoinSet) -> Self {
+        Self::Join(Some(set))
+    }
+}
+
 impl Into<Subject> for &DataInit {
     fn into(self) -> Subject {
         match self {
             DataInit::Filter(_) => Subject::Filter,
+            DataInit::Join(_) => Subject::Join,
         }
     }
 }
@@ -168,13 +193,18 @@ impl DataInit {
     //     }
     // }
 
-    fn is_set(&self) -> bool {
-        !self.is_empty()
-    }
+    // fn is_set(&self) -> bool {
+    //     self.status().is_some()
+    // }
 
     fn is_empty(&self) -> bool {
+        self.status().is_none()
+    }
+
+    fn status(&self) -> Option<()> {
         match self {
-            DataInit::Filter(o) => o.is_none(),
+            Self::Filter(o) => o.as_ref().and(Some(())),
+            Self::Join(o) => o.as_ref().and(Some(())),
         }
     }
 
@@ -190,10 +220,17 @@ impl DataInit {
             Err(ConfigError::Duplicate((&value.into()).into()).into())
         }
     }
-    fn into_filter(self) -> Option<FilterSet> {
+    fn into_filter(self) -> FilterSet {
         match self {
-            Self::Filter(o) => o,
-            //_ => None,
+            Self::Filter(o) => o.unwrap(),
+            _ => unreachable!(),
+        }
+    }
+
+    fn into_join(self) -> JoinSet {
+        match self {
+            Self::Join(o) => o.unwrap(),
+            _ => unreachable!(),
         }
     }
 }

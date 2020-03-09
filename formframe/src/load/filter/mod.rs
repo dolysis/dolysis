@@ -1,6 +1,9 @@
 use {
-    super::error::{Err, LoadError},
-    crate::{graph::Node, prelude::*},
+    super::{
+        error::{Err, LoadError},
+        graph::Node,
+    },
+    crate::prelude::*,
     generational_arena::{Arena, Index},
     regex::Regex,
     serde::{de, Deserialize, Deserializer},
@@ -11,7 +14,7 @@ pub use {filter::FilterSet, join::JoinSet};
 mod filter;
 mod join;
 
-pub fn serial_traverse(
+pub fn recursive_match(
     arena: &Arena<Node<FilterData>>,
     data: &FilterData,
     edges: &[Index],
@@ -32,7 +35,7 @@ pub fn serial_traverse(
                     arena
                         .get(*idx)
                         .unwrap()
-                        .traverse_with(&|a, d, i| serial_traverse(a, d, i, text), arena)
+                        .traverse_with(&|a, d, i| recursive_match(a, d, i, text), arena)
                 })
                 .map(|b| match b {
                     true => Ok(()),
@@ -51,7 +54,7 @@ pub fn serial_traverse(
                     arena
                         .get(*idx)
                         .unwrap()
-                        .traverse_with(&|a, d, i| serial_traverse(a, d, i, text), arena)
+                        .traverse_with(&|a, d, i| recursive_match(a, d, i, text), arena)
                 })
                 .map(|b| match b {
                     false => Ok(()),
@@ -66,9 +69,9 @@ pub fn serial_traverse(
 }
 
 fn init_tree(arena: &mut Arena<Node<FilterData>>, seeds: Vec<FilterSeed>) -> Index {
-    trace!("Starting filter's recursive init");
+    trace!("Starting recursive init");
     let mut top_level = init_recursive(arena, false, seeds.into_iter());
-    trace!("Finished filter's recursive init");
+    trace!("Finished recursive init");
 
     match top_level.len() {
         // If the tree is completely empty, return a 'And' root that always returns true

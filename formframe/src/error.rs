@@ -162,6 +162,7 @@ pub enum ConfigError {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum CfgErrSubject {
     Filter,
+    Join,
     Map,
     Transform,
 }
@@ -170,6 +171,7 @@ impl fmt::Display for CfgErrSubject {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let o = match self {
             Self::Filter => format_args!("filter"),
+            Self::Join => format_args!("join"),
             Self::Map => format_args!("map"),
             Self::Transform => format_args!("transform"),
         };

@@ -13,7 +13,6 @@ use {
 
 mod cli;
 mod error;
-mod graph;
 mod load;
 mod models;
 

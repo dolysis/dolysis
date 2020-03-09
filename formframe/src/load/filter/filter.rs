@@ -1,8 +1,5 @@
 use {
     super::*,
-    crate::{graph::Node, prelude::*},
-    generational_arena::{Arena, Index},
-    serde::Deserialize,
     serde_yaml::from_reader as read_yaml,
     std::{collections::HashMap, io},
 };
@@ -26,7 +23,7 @@ impl FilterSet {
         let mut set = HashMap::new();
 
         wrap.filter.into_iter().try_for_each(|(name, seeds)| {
-            enter!(always_span!("init.filter", filter.name = name.as_str()));
+            enter!(always_span!("init.filter", name = name.as_str()));
             set.insert(name.clone(), init_tree(&mut store, seeds))
                 .map_or_else(|| Ok(()), |_| Err(Err::DuplicateRootName(name)))
         })?;

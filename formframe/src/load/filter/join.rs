@@ -1,12 +1,10 @@
 use {
     super::*,
-    crate::{graph::Node, prelude::*},
-    generational_arena::{Arena, Index},
-    serde::Deserialize,
     serde_yaml::from_reader as read_yaml,
     std::{fmt, io},
 };
 
+#[derive(Debug)]
 pub struct JoinSet {
     store: Arena<Node<FilterData>>,
     set: JoinInner,
@@ -28,10 +26,20 @@ impl JoinSet {
 
         let set = Some((start, cont, end))
             .map(|(s, c, e)| {
+                enter!(span, always_span!("init.join", name = field::Empty));
                 (
-                    s.map(|seeds| init_tree(&mut store, seeds)),
-                    c.map(|seeds| init_tree(&mut store, seeds)),
-                    e.map(|seeds| init_tree(&mut store, seeds)),
+                    s.map(|seeds| {
+                        span.record("name", &"Start");
+                        init_tree(&mut store, seeds)
+                    }),
+                    c.map(|seeds| {
+                        span.record("name", &"While");
+                        init_tree(&mut store, seeds)
+                    }),
+                    e.map(|seeds| {
+                        span.record("name", &"End");
+                        init_tree(&mut store, seeds)
+                    }),
                 )
             })
             .map(|input| JoinInner::new(Self::VALID_INPUT_KINDS, input))
@@ -41,7 +49,7 @@ impl JoinSet {
         Ok(Self { store, set })
     }
 
-    pub fn get_handle(&self) -> JoinSetHandle {
+    pub fn new_handle(&self) -> JoinSetHandle {
         JoinSetHandle::new(self)
     }
 
@@ -112,7 +120,7 @@ impl<'j> JoinSetHandle<'j> {
             store
                 .get(idx)
                 .unwrap()
-                .traverse_with(&|a, d, e| serial_traverse(a, d, e, item), store)
+                .traverse_with(&|a, d, e| recursive_match(a, d, e, item), store)
         })
     }
 }
