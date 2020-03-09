@@ -2,7 +2,8 @@
 
 use {
     crate::{
-        models::{Data, LocalRecord},
+        load::filter::JoinSetHandle,
+        models::{Data, Header, HeaderContext, LocalRecord},
         prelude::{CrateResult as Result, *},
     },
     futures::{
@@ -52,7 +53,7 @@ pub async fn listener(addr: &str) -> Result<()> {
 
                     tokio::spawn(
                         async move {
-                            let (tx_out, rx_out) = channel::<usize>(256);
+                            let (tx_out, rx_out) = channel::<LocalRecord>(256);
                             let input =
                                 handle_connection(socket).then(|stream| join_with(stream, tx_out));
                             let output = rx_out.for_each(|_item| future::ready(()));
@@ -108,7 +109,7 @@ where
         }))
 }
 
-async fn join_with<St>(stream: St, joined_tx: Sender<usize>)
+async fn join_with<St>(stream: St, joined_tx: Sender<LocalRecord>)
 where
     St: Stream<Item = LocalRecord>,
 {
@@ -118,8 +119,11 @@ where
     while let Some(record) = stream.next().await {
         match record {
             LocalRecord::Header(header) => {
+                // TODO: Restrict warn message to duplicate Start headers
                 if map.contains_key(header.id.as_str()) {
-                    warn!("Detected duplicate header ID...");
+                    if header.cxt == HeaderContext::Start {
+                        warn!("Detected duplicate header ID...");
+                    }
                 } else {
                     let (mut tx, rx) = channel::<LocalRecord>(256);
                     let id = header.id.clone();
@@ -146,8 +150,81 @@ where
     }
 }
 
-async fn handle_join(_rx: Receiver<LocalRecord>, joined_tx: Sender<usize>) {
-    unimplemented!()
+async fn handle_join(rx: Receiver<LocalRecord>, mut output_tx: Sender<LocalRecord>) {
+    let mut fused = rx.fuse();
+    let mut handle = cli!().get_join().new_handle();
+    let mut ongoing = None;
+
+    while let Some(record) = fused.next().await {
+        match record {
+            LocalRecord::Header(header) => join_header(&mut output_tx, &mut ongoing, header).await,
+            LocalRecord::Data(data) => {
+                join_data(&mut output_tx, &mut handle, &mut ongoing, data).await
+            }
+        }
+    }
+}
+
+async fn join_header(tx: &mut Sender<LocalRecord>, ongoing: &mut Option<Data>, header: Header) {
+    match header.cxt {
+        HeaderContext::Start => {
+            tx.send(LocalRecord::Header(header))
+                .unwrap_or_else(|e| error!("join TX closed unexpectedly: {}", e))
+                .await;
+        }
+        HeaderContext::End => {
+            // Flush any remaining data
+            if ongoing.is_some() {
+                tx.send(LocalRecord::Data(ongoing.take().unwrap()))
+                    .unwrap_or_else(|e| error!("join TX closed unexpectedly: {}", e))
+                    .await;
+            }
+
+            tx.send(LocalRecord::Header(header))
+                .unwrap_or_else(|e| error!("join TX closed unexpectedly: {}", e))
+                .await;
+        }
+    }
+}
+
+async fn join_data(
+    tx: &mut Sender<LocalRecord>,
+    handle: &mut JoinSetHandle<'_>,
+    ongoing: &mut Option<Data>,
+    data: Data,
+) {
+    // There are 4 possible outcomes for a Data record depending of the state of
+    // (A, B) where A and B are bools and represent:
+    // A: Whether we are currently have an ongoing join
+    // B: Whether the current record should be joined
+    match (ongoing.is_some(), handle.should_join(&*data.data.as_str())) {
+        // No ongoing join & current record is not a join
+        (false, false) => {
+            tx.send(LocalRecord::Data(data))
+                .unwrap_or_else(|e| error!("join TX closed unexpectedly: {}", e))
+                .await;
+        }
+        // No ongoing join, but the current record IS a join... set it as the ongoing join
+        (false, true) => {
+            ongoing.replace(data);
+        }
+        // Ongoing join, which has now finished because the current record IS NOT a join
+        (true, false) => {
+            let joined = ongoing.take().unwrap();
+
+            tx.send(LocalRecord::Data(joined))
+                .unwrap_or_else(|e| error!("join TX closed unexpectedly: {}", e))
+                .await;
+        }
+        // Ongoing join, which will continue as the current record is a join
+        (true, true) => {
+            ongoing
+                .as_mut()
+                // Append a newline and extend the base data with the current data
+                // Note that copied() here does not copy data only a reference
+                .map(|on| on.data.extend(["\n", data.data.as_str()].iter().copied()));
+        }
+    }
 }
 
 pub trait FindFirstLast: Stream + Sized {

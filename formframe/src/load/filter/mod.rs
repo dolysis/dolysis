@@ -9,7 +9,10 @@ use {
     serde::{de, Deserialize, Deserializer},
 };
 
-pub use {filter::FilterSet, join::JoinSet};
+pub use {
+    filter::FilterSet,
+    join::{JoinSet, JoinSetHandle},
+};
 
 mod filter;
 mod join;

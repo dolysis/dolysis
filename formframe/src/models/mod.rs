@@ -161,6 +161,7 @@ impl TryFrom<RecordData> for LocalRecord {
     }
 }
 
+#[derive(Debug)]
 struct Header {
     pub version: u32,
     pub time: i64,
@@ -183,6 +184,7 @@ impl TryFrom<RecordHeader> for Header {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
 enum HeaderContext {
     Start,
     End,
@@ -204,6 +206,7 @@ impl TryFrom<RecordContext> for HeaderContext {
     }
 }
 
+#[derive(Debug)]
 struct Data {
     pub version: u32,
     pub time: i64,
@@ -228,6 +231,7 @@ impl TryFrom<RecordData> for Data {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
 enum DataContext {
     Stdout,
     Stderr,
