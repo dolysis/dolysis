@@ -49,7 +49,6 @@ pub fn generate_cli<'a, 'b>() -> App<'a, 'b> {
 pub struct ProgramArgs {
     filter: FilterSet,
     join: JoinSet,
-    //input_type: DebugInputKind,
 }
 
 impl ProgramArgs {
@@ -65,18 +64,11 @@ impl ProgramArgs {
     fn __try_init(cli: App<'_, '_>) -> Result<Self> {
         let store = cli.get_matches();
 
-        // let input_type = store
-        //     .value_of("debug-input")
-        //     .map(|s| match s {
-        //         "-" => DebugInputKind::Stdin,
-        //         path => DebugInputKind::File(PathBuf::from(path)),
-        //     })
-        //     .unwrap();
+        //let mut filter = DataInit::Filter(None);
+        //let mut join = DataInit::Join(None);
 
-        //trace!(source = %input_type.span_display(), "Reading input from...");
-
-        let mut filter = DataInit::Filter(None);
-        let mut join = DataInit::Join(None);
+        let mut filter: Option<Result<FilterSet>> = None;
+        let mut join: Option<Result<JoinSet>> = None;
 
         store.values_of("config-file").map(|iter| {
             enter!(span, debug_span!("cfg.load", file = field::Empty));
@@ -88,40 +80,42 @@ impl ProgramArgs {
                 span.record("file", &s);
                 File::open(s)
             })
-            .for_each(|file_r| {
-                let _e = file_r
+            .try_for_each(|file_r| {
+                file_r
+                    .map_err(|e| e.into())
                     .and_then(|ref mut file| {
                         // Check current file for a FilterSet
-                        let _e = FilterSet::new_filter(file.by_ref())
+                        let f = FilterSet::new_filter(file.by_ref())
                             .map_err(|e| ConfigError::Other(e).into())
-                            .and_then(|fset| filter.checked_set(DataInit::from(fset)))
                             .log(Level::DEBUG);
+                        lift_result(f, &mut filter)?;
 
                         file.seek(SeekFrom::Start(0))?;
 
                         // Check current file for a JoinSet
-                        let _e = JoinSet::new_filter(file)
+                        let j = JoinSet::new_filter(file)
                             .map_err(|e| ConfigError::Other(e).into())
-                            .and_then(|jset| join.checked_set(DataInit::from(jset)))
                             .log(Level::DEBUG);
+                        lift_result(j, &mut join)?;
 
                         Ok(())
                     })
-                    .map_err(|e| e.into())
-                    .log(Level::WARN);
+                    .log(Level::WARN)
             })
         });
 
         // Check to make sure we have all the required information
-        if filter.status().and(join.status()).is_some() {
-            Ok(Self {
-                filter: filter.into_filter(),
-                join: join.into_join(),
-                //input_type,
+        let filter = filter.transpose().log(Level::ERROR)?;
+        let join = join.transpose().log(Level::ERROR)?;
+
+        filter
+            .ok_or(ConfigError::Missing(Subject::Filter).into())
+            .and_then(|filter| {
+                join.ok_or(ConfigError::Missing(Subject::Filter).into())
+                    .map(|join| (filter, join))
             })
-        } else {
-            Err(ConfigError::Missing(Subject::Filter).into()).log(Level::ERROR)
-        }
+            .map(|(filter, join)| Self { filter, join })
+            .log(Level::ERROR)
     }
 
     pub fn get_filter(&self) -> &FilterSet {
@@ -132,32 +126,39 @@ impl ProgramArgs {
         &self.join
     }
 
-    // pub fn get_input(&self) -> Option<&Path> {
-    //     match self.input_type {
-    //         DebugInputKind::Stdin => None,
-    //         DebugInputKind::File(ref p) => Some(p.as_ref()),
-    //     }
-    // }
-
     // TODO: replace with user arg when implementing tcp/unix subcommand
     pub fn bind_addr(&self) -> &str {
         "127.0.0.1:8080"
     }
 }
 
-#[derive(Debug)]
-enum DebugInputKind {
-    Stdin,
-    File(PathBuf),
+impl Into<Subject> for FilterSet {
+    fn into(self) -> Subject {
+        Subject::Filter
+    }
 }
 
-impl SpanDisplay for DebugInputKind {
-    fn span_print(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Stdin => write!(f, "stdin"),
-            Self::File(path) => write!(f, "{}", path.display()),
-        }
+impl Into<Subject> for JoinSet {
+    fn into(self) -> Subject {
+        Subject::Join
     }
+}
+
+fn lift_result<T>(mut cur: Result<T>, prev: &mut Option<Result<T>>) -> Result<()>
+where
+    T: Into<Subject>,
+{
+    use std::mem::swap;
+    match prev {
+        None => *prev = Some(cur),
+        Some(prev) => match (cur.is_ok(), prev.is_ok()) {
+            (true, false) | (false, false) => swap(&mut cur, prev),
+            (true, true) => Err(ConfigError::Duplicate(cur.ok().take().unwrap().into()))?,
+            (false, true) => (),
+        },
+    }
+
+    Ok(())
 }
 
 #[derive(Debug)]
