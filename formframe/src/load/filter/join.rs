@@ -1,8 +1,4 @@
-use {
-    super::*,
-    serde_yaml::from_reader as read_yaml,
-    std::{fmt, io},
-};
+use {super::*, serde_yaml::from_reader as read_yaml, std::io};
 
 #[derive(Debug)]
 pub struct JoinSet {
@@ -11,7 +7,7 @@ pub struct JoinSet {
 }
 
 impl JoinSet {
-    const VALID_INPUT_KINDS: &'static [(bool, bool, bool)] =
+    pub(in super::super) const VALID_INPUT_KINDS: &'static [(bool, bool, bool)] =
         &[StartEnd::TARGET, StartWhile::TARGET, While::TARGET];
 
     pub fn new_filter<R>(data: R) -> Result<Self, LoadError>
@@ -51,31 +47,6 @@ impl JoinSet {
 
     pub fn new_handle(&self) -> JoinSetHandle {
         JoinSetHandle::new(self)
-    }
-
-    pub(in super::super) fn print_valid_input(f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut valid = Self::VALID_INPUT_KINDS.iter().peekable();
-
-        write!(f, "[")?;
-        loop {
-            let item = valid.next();
-            let last = valid.peek().is_none();
-
-            match (item, last) {
-                (Some(input), false) => write!(
-                    f,
-                    "({}, {}, {}), ",
-                    input.0 as u8, input.1 as u8, input.2 as u8
-                )?,
-                (Some(input), true) => write!(
-                    f,
-                    "({}, {}, {})",
-                    input.0 as u8, input.1 as u8, input.2 as u8
-                )?,
-                (None, _) => break,
-            }
-        }
-        write!(f, "]")
     }
 }
 
@@ -283,8 +254,10 @@ struct JoinWrap {
 
 #[derive(Deserialize, Debug)]
 struct JoinIntermediate {
+    #[serde(default)]
     start: Option<Vec<FilterSeed>>,
-    #[serde(rename = "while")]
+    #[serde(rename = "while", default)]
     cont: Option<Vec<FilterSeed>>,
+    #[serde(default)]
     end: Option<Vec<FilterSeed>>,
 }

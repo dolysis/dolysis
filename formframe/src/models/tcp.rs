@@ -119,7 +119,6 @@ where
     while let Some(record) = stream.next().await {
         match record {
             LocalRecord::Header(header) => {
-                // TODO: Restrict warn message to duplicate Start headers
                 if map.contains_key(header.id.as_str()) {
                     if header.cxt == HeaderContext::Start {
                         warn!("Detected duplicate header ID...");

@@ -9,6 +9,7 @@ use {
     clap::{crate_authors, crate_version, App, Arg, ArgSettings},
     std::{
         fs::File,
+        io::{Read, Seek, SeekFrom},
         path::{Path, PathBuf},
     },
 };
@@ -39,7 +40,7 @@ pub fn generate_cli<'a, 'b>() -> App<'a, 'b> {
                 .takes_value(true)
                 .value_name("PATH")
                 .set(ArgSettings::AllowLeadingHyphen)
-                .required(true)
+                //.required(true)
                 .validator(|s| Some(s.as_str()).filter(|s| (*s == "-") || Path::new(s).exists()).map(|_| ()).ok_or_else(|| format!("'{}' does not exist or is an invalid path", &s)))
                 .help("File to read as input, - for stdin")
         )
@@ -48,7 +49,7 @@ pub fn generate_cli<'a, 'b>() -> App<'a, 'b> {
 pub struct ProgramArgs {
     filter: FilterSet,
     join: JoinSet,
-    input_type: DebugInputKind,
+    //input_type: DebugInputKind,
 }
 
 impl ProgramArgs {
@@ -64,15 +65,15 @@ impl ProgramArgs {
     fn __try_init(cli: App<'_, '_>) -> Result<Self> {
         let store = cli.get_matches();
 
-        let input_type = store
-            .value_of("debug-input")
-            .map(|s| match s {
-                "-" => DebugInputKind::Stdin,
-                path => DebugInputKind::File(PathBuf::from(path)),
-            })
-            .unwrap();
+        // let input_type = store
+        //     .value_of("debug-input")
+        //     .map(|s| match s {
+        //         "-" => DebugInputKind::Stdin,
+        //         path => DebugInputKind::File(PathBuf::from(path)),
+        //     })
+        //     .unwrap();
 
-        trace!(source = %input_type.span_display(), "Reading input from...");
+        //trace!(source = %input_type.span_display(), "Reading input from...");
 
         let mut filter = DataInit::Filter(None);
         let mut join = DataInit::Join(None);
@@ -89,12 +90,14 @@ impl ProgramArgs {
             })
             .for_each(|file_r| {
                 let _e = file_r
-                    .and_then(|ref file| {
+                    .and_then(|ref mut file| {
                         // Check current file for a FilterSet
-                        let _e = FilterSet::new_filter(file)
+                        let _e = FilterSet::new_filter(file.by_ref())
                             .map_err(|e| ConfigError::Other(e).into())
                             .and_then(|fset| filter.checked_set(DataInit::from(fset)))
                             .log(Level::DEBUG);
+
+                        file.seek(SeekFrom::Start(0))?;
 
                         // Check current file for a JoinSet
                         let _e = JoinSet::new_filter(file)
@@ -114,7 +117,7 @@ impl ProgramArgs {
             Ok(Self {
                 filter: filter.into_filter(),
                 join: join.into_join(),
-                input_type,
+                //input_type,
             })
         } else {
             Err(ConfigError::Missing(Subject::Filter).into()).log(Level::ERROR)
@@ -129,12 +132,12 @@ impl ProgramArgs {
         &self.join
     }
 
-    pub fn get_input(&self) -> Option<&Path> {
-        match self.input_type {
-            DebugInputKind::Stdin => None,
-            DebugInputKind::File(ref p) => Some(p.as_ref()),
-        }
-    }
+    // pub fn get_input(&self) -> Option<&Path> {
+    //     match self.input_type {
+    //         DebugInputKind::Stdin => None,
+    //         DebugInputKind::File(ref p) => Some(p.as_ref()),
+    //     }
+    // }
 
     // TODO: replace with user arg when implementing tcp/unix subcommand
     pub fn bind_addr(&self) -> &str {

@@ -85,18 +85,58 @@ impl SpanDisplay for Category {
 #[derive(Debug)]
 struct JiiDisplay((bool, bool, bool));
 
+impl JiiDisplay {
+    fn print_valid_input(f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut valid = JoinSet::VALID_INPUT_KINDS.iter().peekable();
+
+        write!(f, "[")?;
+        loop {
+            let item = valid.next();
+            let last = valid.peek().is_none();
+
+            match (item, last) {
+                (Some(input), false) => write!(
+                    f,
+                    "({}, {}, {}), ",
+                    bp(input.0, "Start"),
+                    bp(input.1, "While"),
+                    bp(input.2, "End")
+                )?,
+                (Some(input), true) => write!(
+                    f,
+                    "({}, {}, {})",
+                    bp(input.0, "Start"),
+                    bp(input.1, "While"),
+                    bp(input.2, "End")
+                )?,
+                (None, _) => break,
+            }
+        }
+        write!(f, "]")
+    }
+}
+
 impl fmt::Display for JiiDisplay {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let (start, cont, end) = self.0;
         write!(f, "Invalid Join input, requires one of: ")?;
-        JoinSet::print_valid_input(f)?;
+        Self::print_valid_input(f)?;
         write!(
             f,
-            ", got: ({}, {}, {}) where (x, y, z) = (Start, While, End)",
-            (self.0).1 as u8,
-            (self.0).1 as u8,
-            (self.0).2 as u8,
+            ", got: ({}, {}, {})",
+            bp(start, "Start"),
+            bp(cont, "While"),
+            bp(end, "End"),
         )
     }
 }
 
 impl error::Error for JiiDisplay {}
+
+fn bp<'a>(descrim: bool, a: &'a str) -> &'a str {
+    if descrim {
+        a
+    } else {
+        "-"
+    }
+}

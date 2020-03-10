@@ -20,29 +20,9 @@ filter:
     - any:
       - re: '(?i)hello\s+\w'
       - re: '(?i)hi\s+\w'
-  bad:
-    - any:
-map:
-  some_map: "..."
-execute:
-  - match: pytest
-    on: source
-    find: complex
-    do:
-      - complex
-      - some_map
-      - date
-      - some_map
-  - match: samba
-    on: source
-    find: date
-    do:
-      - "..."
-  - match: junit
-    on: data
-    re: "^*.junit"
-    then:
-      - complex
+join:
+  start:
+    - re: '\W'
 
 # Starting with complex
 # 00. Allocate ROOT node: edges: unknown, and store index (somewhere)                                                 | LVL 0
