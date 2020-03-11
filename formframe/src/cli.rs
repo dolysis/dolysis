@@ -3,14 +3,13 @@ use {
     crate::{
         error::{CfgErrSubject as Subject, ConfigError},
         load::filter::{FilterSet, JoinSet},
-        models::SpanDisplay,
         prelude::{CrateResult as Result, *},
     },
     clap::{crate_authors, crate_version, App, Arg, ArgSettings},
     std::{
         fs::File,
         io::{Read, Seek, SeekFrom},
-        path::{Path, PathBuf},
+        path::Path,
     },
 };
 
@@ -159,82 +158,4 @@ where
     }
 
     Ok(())
-}
-
-#[derive(Debug)]
-enum DataInit {
-    Filter(Option<FilterSet>),
-    Join(Option<JoinSet>),
-}
-
-impl From<FilterSet> for DataInit {
-    fn from(set: FilterSet) -> Self {
-        Self::Filter(Some(set))
-    }
-}
-
-impl From<JoinSet> for DataInit {
-    fn from(set: JoinSet) -> Self {
-        Self::Join(Some(set))
-    }
-}
-
-impl Into<Subject> for &DataInit {
-    fn into(self) -> Subject {
-        match self {
-            DataInit::Filter(_) => Subject::Filter,
-            DataInit::Join(_) => Subject::Join,
-        }
-    }
-}
-
-impl DataInit {
-    // Will be needed once UnixListener is implemented
-    // fn and(&self, other: Self) -> Option<()> {
-    //     match (self.is_set(), other.is_set()) {
-    //         (true, true) => Some(()),
-    //         (_, _) => None,
-    //     }
-    // }
-
-    // fn is_set(&self) -> bool {
-    //     self.status().is_some()
-    // }
-
-    fn is_empty(&self) -> bool {
-        self.status().is_none()
-    }
-
-    fn status(&self) -> Option<()> {
-        match self {
-            Self::Filter(o) => o.as_ref().and(Some(())),
-            Self::Join(o) => o.as_ref().and(Some(())),
-        }
-    }
-
-    fn checked_set<T>(&mut self, value: T) -> Result<()>
-    where
-        T: Into<DataInit>,
-    {
-        if self.is_empty() {
-            *self = value.into();
-            Ok(())
-        } else {
-            // Lotta intos: T -> DataInit -> &DataInit -> Subject -> CrateError
-            Err(ConfigError::Duplicate((&value.into()).into()).into())
-        }
-    }
-    fn into_filter(self) -> FilterSet {
-        match self {
-            Self::Filter(o) => o.unwrap(),
-            _ => unreachable!(),
-        }
-    }
-
-    fn into_join(self) -> JoinSet {
-        match self {
-            Self::Join(o) => o.unwrap(),
-            _ => unreachable!(),
-        }
-    }
 }

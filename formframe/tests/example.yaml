@@ -21,7 +21,9 @@ filter:
       - re: '(?i)hello\s+\w'
       - re: '(?i)hi\s+\w'
 join:
-  start:
+  while:
+    - re: '\d+'
+  end:
     - re: '\W'
 
 # Starting with complex

@@ -41,6 +41,25 @@ impl FilterSet {
     {
         f(&self.store, &self.named_set)
     }
+
+    pub fn is_match_all<T>(&self, on: T) -> bool
+    where
+        T: AsRef<str>,
+    {
+        let on = on.as_ref();
+        self.access_set(|store, m| {
+            m.values().fold(true, |state, root| {
+                if state == false {
+                    state
+                } else {
+                    store
+                        .get(*root)
+                        .unwrap()
+                        .traverse_with(&|s, f, e| recursive_match(s, f, e, on), store)
+                }
+            })
+        })
+    }
 }
 
 #[derive(Deserialize, Debug)]
