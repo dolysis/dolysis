@@ -2,15 +2,13 @@
 use {
     crate::{
         error::{CfgErrSubject as Subject, ConfigError},
-        load::filter::{FilterSet, JoinSet},
+        load::filter::{FilterSet, FilterWrap, JoinSet, JoinWrap},
         prelude::{CrateResult as Result, *},
     },
     clap::{crate_authors, crate_version, App, Arg, ArgSettings},
-    std::{
-        fs::File,
-        io::{Read, Seek, SeekFrom},
-        path::Path,
-    },
+    serde::{Deserialize, Deserializer},
+    serde_yaml::from_reader as read_yaml,
+    std::{fs::File, path::Path},
 };
 
 pub fn generate_cli<'a, 'b>() -> App<'a, 'b> {
@@ -48,6 +46,7 @@ pub fn generate_cli<'a, 'b>() -> App<'a, 'b> {
 pub struct ProgramArgs {
     filter: FilterSet,
     join: JoinSet,
+    exec: Vec<Exec>,
 }
 
 impl ProgramArgs {
@@ -68,6 +67,7 @@ impl ProgramArgs {
 
         let mut filter: Option<Result<FilterSet>> = None;
         let mut join: Option<Result<JoinSet>> = None;
+        let mut exec: Option<Result<Vec<Exec>>> = None;
 
         store.values_of("config-file").map(|iter| {
             enter!(span, debug_span!("cfg.load", file = field::Empty));
@@ -83,19 +83,21 @@ impl ProgramArgs {
                 file_r
                     .map_err(|e| e.into())
                     .and_then(|ref mut file| {
-                        // Check current file for a FilterSet
-                        let f = FilterSet::new_filter(file.by_ref())
-                            .map_err(|e| ConfigError::Other(e).into())
-                            .log(Level::DEBUG);
-                        lift_result(f, &mut filter)?;
+                        // Deserialize current file
+                        let ConfigDeserialize {
+                            filter: f,
+                            join: j,
+                            exec: e,
+                        } = read_yaml(file).unwrap();
 
-                        file.seek(SeekFrom::Start(0))?;
+                        // Check current file for a FilterSet
+                        lift_result(f.map(|res| res.log(Level::DEBUG)), &mut filter)?;
 
                         // Check current file for a JoinSet
-                        let j = JoinSet::new_filter(file)
-                            .map_err(|e| ConfigError::Other(e).into())
-                            .log(Level::DEBUG);
-                        lift_result(j, &mut join)?;
+                        lift_result(j.map(|res| res.log(Level::DEBUG)), &mut join)?;
+
+                        // Check current file for an Exec list
+                        lift_result(e.map(Ok), &mut exec)?;
 
                         Ok(())
                     })
@@ -104,17 +106,34 @@ impl ProgramArgs {
         });
 
         // Check to make sure we have all the required information
-        let filter = filter.transpose().log(Level::ERROR)?;
-        let join = join.transpose().log(Level::ERROR)?;
-
-        filter
-            .ok_or(ConfigError::Missing(Subject::Filter).into())
-            .and_then(|filter| {
-                join.ok_or(ConfigError::Missing(Subject::Filter).into())
-                    .map(|join| (filter, join))
+        let filter = filter
+            .transpose()
+            .and_then(|o| o.ok_or(ConfigError::Missing(Subject::Filter).into()))
+            .log(Level::ERROR)?;
+        let join = join
+            .transpose()
+            .and_then(|o| o.ok_or(ConfigError::Missing(Subject::Join).into()))
+            .log(Level::ERROR)?;
+        let exec = exec
+            .transpose()
+            .and_then(|o| o.ok_or(ConfigError::Missing(Subject::Join).into()))
+            .and_then(|vec| {
+                vec.iter()
+                    .try_for_each(|key| match key {
+                        Exec::Filter(k) => {
+                            if filter.access_set(|_, m| m.contains_key(k.as_str())) {
+                                Ok(())
+                            } else {
+                                Err(ConfigError::InvalidExecKey(key.as_ref().into(), k.clone())
+                                    .into())
+                            }
+                        }
+                    })
+                    .map(|_| vec)
             })
-            .map(|(filter, join)| Self { filter, join })
-            .log(Level::ERROR)
+            .log(Level::ERROR)?;
+
+        Ok(Self { filter, join, exec })
     }
 
     pub fn get_filter(&self) -> &FilterSet {
@@ -123,6 +142,10 @@ impl ProgramArgs {
 
     pub fn get_join(&self) -> &JoinSet {
         &self.join
+    }
+
+    pub fn get_exec(&self) -> impl Iterator<Item = OpKind<'_>> {
+        self.exec.iter().map(|i| i.into())
     }
 
     // TODO: replace with user arg when implementing tcp/unix subcommand
@@ -143,19 +166,101 @@ impl Into<Subject> for JoinSet {
     }
 }
 
-fn lift_result<T>(mut cur: Result<T>, prev: &mut Option<Result<T>>) -> Result<()>
+impl Into<Subject> for Vec<Exec> {
+    fn into(self) -> Subject {
+        Subject::Exec
+    }
+}
+
+fn lift_result<T>(cur: Option<Result<T>>, prev: &mut Option<Result<T>>) -> Result<()>
 where
     T: Into<Subject>,
 {
     use std::mem::swap;
-    match prev {
-        None => *prev = Some(cur),
-        Some(prev) => match (cur.is_ok(), prev.is_ok()) {
-            (true, false) | (false, false) => swap(&mut cur, prev),
-            (true, true) => Err(ConfigError::Duplicate(cur.ok().take().unwrap().into()))?,
-            (false, true) => (),
-        },
+    if let Some(mut cur) = cur {
+        match prev {
+            None => *prev = Some(cur),
+            Some(prev) => match (cur.is_ok(), prev.is_ok()) {
+                (true, false) | (false, false) => swap(&mut cur, prev),
+                (true, true) => Err(ConfigError::Duplicate(cur.ok().take().unwrap().into()))?,
+                (false, true) => (),
+            },
+        }
     }
 
     Ok(())
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(from = "CfgInner")]
+struct ConfigDeserialize {
+    filter: Option<Result<FilterSet>>,
+    join: Option<Result<JoinSet>>,
+    exec: Option<Vec<Exec>>,
+}
+
+impl From<CfgInner> for ConfigDeserialize {
+    fn from(inner: CfgInner) -> Self {
+        use std::convert::TryInto;
+        Self {
+            filter: inner
+                .filter
+                .map(|i| i.try_into().map_err(|e| ConfigError::Other(e).into())),
+            join: inner
+                .join
+                .map(|i| i.try_into().map_err(|e| ConfigError::Other(e).into())),
+            exec: inner.exec,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct CfgInner {
+    #[serde(deserialize_with = "de_infallible", flatten)]
+    filter: Option<FilterWrap>,
+    #[serde(deserialize_with = "de_infallible", flatten)]
+    join: Option<JoinWrap>,
+    #[serde(deserialize_with = "de_infallible")]
+    exec: Option<Vec<Exec>>,
+}
+
+fn de_infallible<'de, D, T>(de: D) -> std::result::Result<Option<T>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Ok(Deserialize::deserialize(de).map(Some).unwrap_or(None))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum Exec {
+    Filter(String),
+}
+
+impl Into<Subject> for &Exec {
+    fn into(self) -> Subject {
+        match self {
+            Exec::Filter(_) => Subject::Filter,
+        }
+    }
+}
+
+impl AsRef<Exec> for Exec {
+    fn as_ref(&self) -> &Exec {
+        &self
+    }
+}
+
+impl<'cli> From<&'cli Exec> for OpKind<'cli> {
+    fn from(exec: &'cli Exec) -> Self {
+        match exec {
+            Exec::Filter(s) => OpKind::Filter(s.as_str()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum OpKind<'cli> {
+    Filter(&'cli str),
 }

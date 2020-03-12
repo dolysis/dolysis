@@ -10,8 +10,8 @@ use {
 };
 
 pub use {
-    filter::FilterSet,
-    join::{JoinSet, JoinSetHandle},
+    filter::{FilterSet, FilterWrap},
+    join::{JoinSet, JoinSetHandle, JoinWrap},
 };
 
 mod filter;

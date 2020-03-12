@@ -130,10 +130,9 @@ impl JoinInner {
 
         whitelist
             .iter()
-            .fold(None, |mut out, &valid| {
+            .fold(None, |out, &valid| {
                 if out.is_none() && valid == target {
-                    out = Some(Self::instantiate_unchecked(input));
-                    out
+                    Some(Self::instantiate_unchecked(input))
                 } else {
                     out
                 }
@@ -258,7 +257,7 @@ impl Join for While {
 }
 
 #[derive(Deserialize, Debug)]
-struct JoinWrap {
+pub struct JoinWrap {
     join: JoinIntermediate,
 }
 

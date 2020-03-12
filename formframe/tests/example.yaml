@@ -25,6 +25,9 @@ join:
     - re: '\d+'
   end:
     - re: '\W'
+exec:
+  - filter: date
+  - filter: complex
 
 # Starting with complex
 # 00. Allocate ROOT node: edges: unknown, and store index (somewhere)                                                 | LVL 0

@@ -1,4 +1,4 @@
-//#![allow(dead_code)]
+#![allow(dead_code)]
 
 use {
     crate::{
@@ -7,7 +7,6 @@ use {
         prelude::{CrateResult as Result, *},
     },
     futures::{
-        future::Either,
         prelude::*,
         ready,
         stream::{Peekable, Stream},

@@ -82,7 +82,7 @@ impl TryFrom<FilterWrap> for FilterSet {
 }
 
 #[derive(Deserialize, Debug)]
-struct FilterWrap {
+pub struct FilterWrap {
     filter: FilterIntermediate,
 }
 

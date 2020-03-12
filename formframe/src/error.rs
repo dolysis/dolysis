@@ -155,6 +155,8 @@ pub enum ConfigError {
     Missing(CfgErrSubject),
     #[error("duplicate config: {}", .0)]
     Duplicate(CfgErrSubject),
+    #[error("key '{}' not found in: {}", .1, .0)]
+    InvalidExecKey(CfgErrSubject, String),
     #[error(transparent)]
     Other(LoadError),
 }
@@ -165,6 +167,7 @@ pub enum CfgErrSubject {
     Join,
     Map,
     Transform,
+    Exec,
 }
 
 impl fmt::Display for CfgErrSubject {
@@ -174,6 +177,7 @@ impl fmt::Display for CfgErrSubject {
             Self::Join => format_args!("join"),
             Self::Map => format_args!("map"),
             Self::Transform => format_args!("transform"),
+            Self::Exec => format_args!("exec"),
         };
 
         write!(f, "{}", o)
