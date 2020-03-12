@@ -1,6 +1,11 @@
-use {super::*, serde_yaml::from_reader as read_yaml, std::io};
+use {
+    super::*,
+    serde_yaml::from_reader as read_yaml,
+    std::{convert::TryFrom, io},
+};
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize)]
+#[serde(try_from = "JoinWrap")]
 pub struct JoinSet {
     store: Arena<Node<FilterData>>,
     set: JoinInner,
@@ -14,35 +19,7 @@ impl JoinSet {
     where
         R: io::Read,
     {
-        let wrap: JoinWrap = read_yaml(data)?;
-        trace!("Yaml syntax valid");
-
-        let mut store = Arena::new();
-        let JoinIntermediate { start, cont, end } = wrap.join;
-
-        let set = Some((start, cont, end))
-            .map(|(s, c, e)| {
-                enter!(span, always_span!("init.join", name = field::Empty));
-                (
-                    s.map(|seeds| {
-                        span.record("name", &"Start");
-                        init_tree(&mut store, seeds)
-                    }),
-                    c.map(|seeds| {
-                        span.record("name", &"While");
-                        init_tree(&mut store, seeds)
-                    }),
-                    e.map(|seeds| {
-                        span.record("name", &"End");
-                        init_tree(&mut store, seeds)
-                    }),
-                )
-            })
-            .map(|input| JoinInner::new(Self::VALID_INPUT_KINDS, input))
-            // Note the unwrap removes the Some added above, and is thus always safe
-            .unwrap()?;
-
-        Ok(Self { store, set })
+        read_yaml(data).map_err(|e| e.into())
     }
 
     pub fn new_handle(&self) -> JoinSetHandle {
@@ -92,6 +69,39 @@ impl<'j> JoinSetHandle<'j> {
                 .unwrap()
                 .traverse_with(&|a, d, e| recursive_match(a, d, e, item), store)
         })
+    }
+}
+
+impl TryFrom<JoinWrap> for JoinSet {
+    type Error = LoadError;
+
+    fn try_from(wrap: JoinWrap) -> Result<Self, Self::Error> {
+        let mut store = Arena::new();
+        let JoinIntermediate { start, cont, end } = wrap.join;
+
+        let set = Some((start, cont, end))
+            .map(|(s, c, e)| {
+                enter!(span, always_span!("init.join", name = field::Empty));
+                (
+                    s.map(|seeds| {
+                        span.record("name", &"Start");
+                        init_tree(&mut store, seeds)
+                    }),
+                    c.map(|seeds| {
+                        span.record("name", &"While");
+                        init_tree(&mut store, seeds)
+                    }),
+                    e.map(|seeds| {
+                        span.record("name", &"End");
+                        init_tree(&mut store, seeds)
+                    }),
+                )
+            })
+            .map(|input| JoinInner::new(Self::VALID_INPUT_KINDS, input))
+            // Note the unwrap removes the Some added above, and is thus always safe
+            .unwrap()?;
+
+        Ok(Self { store, set })
     }
 }
 

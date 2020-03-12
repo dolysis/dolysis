@@ -2,11 +2,12 @@
 
 use {
     crate::{
-        load::filter::JoinSetHandle,
+        load::filter::{FilterSet, JoinSetHandle},
         models::{Data, DataContext, Header, HeaderContext, LocalRecord},
         prelude::{CrateResult as Result, *},
     },
     futures::{
+        future::Either,
         prelude::*,
         ready,
         stream::{Peekable, Stream},
@@ -207,6 +208,35 @@ async fn handle_join(
     barrier.wait().await;
 }
 
+fn apply_recursive<'a, 'cli: 'a, St, I>(
+    stream: St,
+    mut ops: I,
+) -> Box<dyn Stream<Item = St::Item> + 'a>
+where
+    St: Stream<Item = LocalRecord> + 'a,
+    I: Iterator<Item = OpKind<'cli>>,
+{
+    match ops.next() {
+        Some(OpKind::Filter(name)) => {
+            let next = stream.filter_records(cli!().get_filter(), name);
+
+            apply_recursive(next, ops)
+        }
+        None => Box::new(stream),
+    }
+}
+
+enum OpKind<'cli> {
+    Filter(&'cli str),
+}
+
+async fn filter(output_rx: Receiver<LocalRecord>) -> impl Stream<Item = LocalRecord> {
+    output_rx.filter(|record| match record {
+        LocalRecord::Header(_) => future::ready(true),
+        LocalRecord::Data(ref data) => future::ready(cli!().get_filter().is_match_all(&data.data)),
+    })
+}
+
 pub trait FindFirstLast: Stream + Sized {
     fn first_last(self) -> FirstLast<Self>;
 }
@@ -221,13 +251,6 @@ where
             inner: self.peekable(),
         }
     }
-}
-
-async fn filter(output_rx: Receiver<LocalRecord>) -> impl Stream<Item = LocalRecord> {
-    output_rx.filter(|record| match record {
-        LocalRecord::Header(_) => future::ready(true),
-        LocalRecord::Data(ref data) => future::ready(cli!().get_filter().is_match_all(&data.data)),
-    })
 }
 
 /// A stream that checks whether the current item is the first or last item in the stream.
@@ -264,14 +287,14 @@ where
 }
 
 trait JoinRecords: Stream + Sized {
-    fn join_records<'j>(self, handle: JoinSetHandle<'j>) -> Join<Self>;
+    fn join_records<'cli>(self, handle: JoinSetHandle<'cli>) -> Join<Self>;
 }
 
 impl<St> JoinRecords for St
 where
     St: Stream<Item = LocalRecord>,
 {
-    fn join_records<'j>(self, handle: JoinSetHandle<'j>) -> Join<Self> {
+    fn join_records<'cli>(self, handle: JoinSetHandle<'cli>) -> Join<Self> {
         Join {
             inner: self,
             ongoing: None,
@@ -347,6 +370,61 @@ where
                     }
                 }
             },
+        }
+    }
+}
+
+trait FilterRecords: Stream + Sized {
+    fn filter_records<'cli>(self, set: &'cli FilterSet, key: &'cli str)
+        -> RecordFilter<'cli, Self>;
+}
+
+impl<St> FilterRecords for St
+where
+    St: Stream<Item = LocalRecord>,
+{
+    fn filter_records<'cli>(
+        self,
+        set: &'cli FilterSet,
+        key: &'cli str,
+    ) -> RecordFilter<'cli, Self> {
+        RecordFilter {
+            inner: self,
+            filter_name: key,
+            set,
+        }
+    }
+}
+
+#[pin_project]
+struct RecordFilter<'f, St>
+where
+    St: Stream,
+{
+    #[pin]
+    inner: St,
+    filter_name: &'f str,
+    set: &'f FilterSet,
+}
+
+impl<St> Stream for RecordFilter<'_, St>
+where
+    St: Stream<Item = LocalRecord>,
+{
+    type Item = St::Item;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let mut this = self;
+
+        match ready!(this.as_mut().project().inner.poll_next(cx)) {
+            Some(record) => match record {
+                header @ LocalRecord::Header(_) => Poll::Ready(Some(header)),
+                LocalRecord::Data(data) if this.set.is_match_with(this.filter_name, &data.data) => {
+                    Poll::Ready(Some(LocalRecord::Data(data)))
+                }
+                LocalRecord::Data(_) => Poll::Pending,
+            },
+            None => Poll::Ready(None),
         }
     }
 }

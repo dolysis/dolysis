@@ -21,7 +21,7 @@ filter:
       - re: '(?i)hello\s+\w'
       - re: '(?i)hi\s+\w'
 join:
-  while:
+  start:
     - re: '\d+'
   end:
     - re: '\W'
