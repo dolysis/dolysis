@@ -213,7 +213,7 @@ async fn handle_stream(rx: Receiver<LocalRecord>, mut output_tx: Sender<LocalRec
     let joined = rx
         .inspect(|record| trace!("pre-ops: {:?}", &record))
         .join_records(cli!().get_join().new_handle());
-    let mut stream = joined.filter_records(cli!().get_filter(), "greeting"); //apply_ops_recursive(Box::pin(joined), cli!().get_exec()).into();
+    let mut stream = joined; //apply_ops_recursive(Box::pin(joined), cli!().get_exec()).into();
 
     while let Some(record) = stream.next().await {
         trace!("post-ops: {:?}", &record);
