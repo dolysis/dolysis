@@ -2,15 +2,13 @@
 use {
     crate::{
         error::{CfgErrSubject as Subject, ConfigError},
-        load::filter::FilterSet,
-        models::SpanDisplay,
+        load::filters::{FilterSet, FilterWrap, JoinSet, JoinWrap},
         prelude::{CrateResult as Result, *},
     },
     clap::{crate_authors, crate_version, App, Arg, ArgSettings},
-    std::{
-        fs::File,
-        path::{Path, PathBuf},
-    },
+    serde::{Deserialize, Deserializer},
+    serde_yaml::from_reader as read_yaml,
+    std::{fs::File, path::Path},
 };
 
 pub fn generate_cli<'a, 'b>() -> App<'a, 'b> {
@@ -39,7 +37,7 @@ pub fn generate_cli<'a, 'b>() -> App<'a, 'b> {
                 .takes_value(true)
                 .value_name("PATH")
                 .set(ArgSettings::AllowLeadingHyphen)
-                .required(true)
+                //.required(true)
                 .validator(|s| Some(s.as_str()).filter(|s| (*s == "-") || Path::new(s).exists()).map(|_| ()).ok_or_else(|| format!("'{}' does not exist or is an invalid path", &s)))
                 .help("File to read as input, - for stdin")
         )
@@ -47,7 +45,8 @@ pub fn generate_cli<'a, 'b>() -> App<'a, 'b> {
 
 pub struct ProgramArgs {
     filter: FilterSet,
-    input_type: DebugInputKind,
+    join: JoinSet,
+    exec: Vec<Exec>,
 }
 
 impl ProgramArgs {
@@ -63,20 +62,12 @@ impl ProgramArgs {
     fn __try_init(cli: App<'_, '_>) -> Result<Self> {
         let store = cli.get_matches();
 
-        let input_type = store
-            .value_of("debug-input")
-            .map(|s| match s {
-                "-" => DebugInputKind::Stdin,
-                path => DebugInputKind::File(PathBuf::from(path)),
-            })
-            .unwrap();
-
-        trace!(source = %input_type.span_display(), "Reading input from...");
-
-        let mut filter = DataInit::Filter(None);
+        let mut filter: Option<Result<FilterSet>> = None;
+        let mut join: Option<Result<JoinSet>> = None;
+        let mut exec: Option<Result<Vec<Exec>>> = None;
 
         store.values_of("config-file").map(|iter| {
-            enter!(span, debug_span!("cfg.load", file = ""));
+            enter!(span, debug_span!("cfg.load", file = field::Empty));
             // We allow the user to specify multiple files with a requirement that somewhere in
             // these files are all the required config options. Which means that if we can't open a file,
             // or if the file is invalid yaml we shouldn't give up because other files may contain the
@@ -85,38 +76,73 @@ impl ProgramArgs {
                 span.record("file", &s);
                 File::open(s)
             })
-            .try_for_each(|res| {
-                res.map_err(|e| e.into())
-                    .and_then(|ref f| {
-                        FilterSet::try_new(f)
-                            .map_err(|e| ConfigError::Other(e).into())
-                            .and_then(|fset| filter.checked_set(DataInit::from(fset)))
+            .try_for_each(|file_r| {
+                file_r
+                    .map_err(|e| e.into())
+                    .and_then(|ref mut file| {
+                        // Deserialize current file
+                        let ConfigDeserialize {
+                            filter: f,
+                            join: j,
+                            exec: e,
+                        } = read_yaml(file).unwrap();
+
+                        // Check current file for a FilterSet
+                        lift_result(f.map(|res| res.log(Level::DEBUG)), &mut filter)?;
+
+                        // Check current file for a JoinSet
+                        lift_result(j.map(|res| res.log(Level::DEBUG)), &mut join)?;
+
+                        // Check current file for an Exec list
+                        lift_result(e.map(Ok), &mut exec)?;
+
+                        Ok(())
                     })
                     .log(Level::WARN)
             })
         });
 
-        // When we implement more objects it will be filter.and(...).and(...)...is_some()
         // Check to make sure we have all the required information
-        if filter.is_set() {
-            Ok(Self {
-                filter: filter.into_filter().unwrap(),
-                input_type,
+        let filter = filter
+            .transpose()
+            .and_then(|o| o.ok_or_else(|| ConfigError::Missing(Subject::Filter).into()))
+            .log(Level::ERROR)?;
+        let join = join
+            .transpose()
+            .and_then(|o| o.ok_or_else(|| ConfigError::Missing(Subject::Join).into()))
+            .log(Level::ERROR)?;
+        let exec = exec
+            .transpose()
+            .and_then(|o| o.ok_or_else(|| ConfigError::Missing(Subject::Join).into()))
+            .and_then(|vec| {
+                vec.iter()
+                    .try_for_each(|key| match key {
+                        Exec::Filter(k) => {
+                            if filter.access_set(|_, m| m.contains_key(k.as_str())) {
+                                Ok(())
+                            } else {
+                                Err(ConfigError::InvalidExecKey(key.as_ref().into(), k.clone())
+                                    .into())
+                            }
+                        }
+                    })
+                    .map(|_| vec)
             })
-        } else {
-            Err(ConfigError::Missing(Subject::Filter).into()).log(Level::ERROR)
-        }
+            .log(Level::ERROR)?;
+
+        Ok(Self { filter, join, exec })
     }
 
     pub fn get_filter(&self) -> &FilterSet {
         &self.filter
     }
 
-    pub fn get_input(&self) -> Option<&Path> {
-        match self.input_type {
-            DebugInputKind::Stdin => None,
-            DebugInputKind::File(ref p) => Some(p.as_ref()),
-        }
+    pub fn get_join(&self) -> &JoinSet {
+        &self.join
+    }
+
+    pub fn get_exec(&self) -> impl Iterator<Item = OpKind<'_>> {
+        self.exec.iter().map(|i| i.into())
     }
 
     // TODO: replace with user arg when implementing tcp/unix subcommand
@@ -125,75 +151,115 @@ impl ProgramArgs {
     }
 }
 
-#[derive(Debug)]
-enum DebugInputKind {
-    Stdin,
-    File(PathBuf),
+impl Into<Subject> for FilterSet {
+    fn into(self) -> Subject {
+        Subject::Filter
+    }
 }
 
-impl SpanDisplay for DebugInputKind {
-    fn span_print(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Stdin => write!(f, "stdin"),
-            Self::File(path) => write!(f, "{}", path.display()),
+impl Into<Subject> for JoinSet {
+    fn into(self) -> Subject {
+        Subject::Join
+    }
+}
+
+impl Into<Subject> for Vec<Exec> {
+    fn into(self) -> Subject {
+        Subject::Exec
+    }
+}
+
+fn lift_result<T>(cur: Option<Result<T>>, prev: &mut Option<Result<T>>) -> Result<()>
+where
+    T: Into<Subject>,
+{
+    use std::mem::swap;
+    if let Some(mut cur) = cur {
+        match prev {
+            None => *prev = Some(cur),
+            Some(prev) => match (cur.is_ok(), prev.is_ok()) {
+                (true, false) | (false, false) => swap(&mut cur, prev),
+                (true, true) => {
+                    return Err(ConfigError::Duplicate(cur.ok().take().unwrap().into()).into())
+                }
+                (false, true) => (),
+            },
+        }
+    }
+
+    Ok(())
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(from = "CfgInner")]
+struct ConfigDeserialize {
+    filter: Option<Result<FilterSet>>,
+    join: Option<Result<JoinSet>>,
+    exec: Option<Vec<Exec>>,
+}
+
+impl From<CfgInner> for ConfigDeserialize {
+    fn from(inner: CfgInner) -> Self {
+        use std::convert::TryInto;
+        Self {
+            filter: inner
+                .filter
+                .map(|i| i.try_into().map_err(|e| ConfigError::Other(e).into())),
+            join: inner
+                .join
+                .map(|i| i.try_into().map_err(|e| ConfigError::Other(e).into())),
+            exec: inner.exec,
         }
     }
 }
 
-#[derive(Debug)]
-enum DataInit {
-    Filter(Option<FilterSet>),
+#[derive(Debug, Deserialize)]
+struct CfgInner {
+    #[serde(deserialize_with = "de_infallible", flatten)]
+    filter: Option<FilterWrap>,
+    #[serde(deserialize_with = "de_infallible", flatten)]
+    join: Option<JoinWrap>,
+    #[serde(deserialize_with = "de_infallible")]
+    exec: Option<Vec<Exec>>,
 }
 
-impl From<FilterSet> for DataInit {
-    fn from(set: FilterSet) -> Self {
-        Self::Filter(Some(set))
-    }
+fn de_infallible<'de, D, T>(de: D) -> std::result::Result<Option<T>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Ok(Deserialize::deserialize(de).map(Some).unwrap_or(None))
 }
 
-impl Into<Subject> for &DataInit {
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum Exec {
+    Filter(String),
+}
+
+impl Into<Subject> for &Exec {
     fn into(self) -> Subject {
         match self {
-            DataInit::Filter(_) => Subject::Filter,
+            Exec::Filter(_) => Subject::Filter,
         }
     }
 }
 
-impl DataInit {
-    // Will be needed once UnixListener is implemented
-    // fn and(&self, other: Self) -> Option<()> {
-    //     match (self.is_set(), other.is_set()) {
-    //         (true, true) => Some(()),
-    //         (_, _) => None,
-    //     }
-    // }
-
-    fn is_set(&self) -> bool {
-        !self.is_empty()
+impl AsRef<Exec> for Exec {
+    fn as_ref(&self) -> &Exec {
+        &self
     }
+}
 
-    fn is_empty(&self) -> bool {
-        match self {
-            DataInit::Filter(o) => o.is_none(),
+impl<'cli> From<&'cli Exec> for OpKind<'cli> {
+    fn from(exec: &'cli Exec) -> Self {
+        match exec {
+            Exec::Filter(s) => OpKind::Filter(s.as_str()),
         }
     }
+}
 
-    fn checked_set<T>(&mut self, value: T) -> Result<()>
-    where
-        T: Into<DataInit>,
-    {
-        if self.is_empty() {
-            *self = value.into();
-            Ok(())
-        } else {
-            // Lotta intos: T -> DataInit -> &DataInit -> Subject -> CrateError
-            Err(ConfigError::Duplicate((&value.into()).into()).into())
-        }
-    }
-    fn into_filter(self) -> Option<FilterSet> {
-        match self {
-            Self::Filter(o) => o,
-            //_ => None,
-        }
-    }
+#[derive(Debug, Clone, Copy)]
+pub enum OpKind<'cli> {
+    Filter(&'cli str),
 }

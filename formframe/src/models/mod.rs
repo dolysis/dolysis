@@ -1,7 +1,7 @@
 use {
     crate::{error::MainResult, prelude::*, ARGS},
     serde_interface::{
-        Data as RecordData, DataContext as RecordContext, Header as RecordHeader, Record,
+        Common, Data as RecordData, DataContext as RecordContext, Header as RecordHeader, Record,
     },
     std::{
         convert::{TryFrom, TryInto},
@@ -140,9 +140,19 @@ where
     }
 }
 
+#[derive(Debug)]
 enum LocalRecord {
     Header(Header),
     Data(Data),
+}
+
+impl Into<Record> for LocalRecord {
+    fn into(self) -> Record {
+        match self {
+            Self::Header(r) => r.into(),
+            Self::Data(r) => r.into(),
+        }
+    }
 }
 
 impl TryFrom<RecordHeader> for LocalRecord {
@@ -161,6 +171,7 @@ impl TryFrom<RecordData> for LocalRecord {
     }
 }
 
+#[derive(Debug)]
 struct Header {
     pub version: u32,
     pub time: i64,
@@ -183,6 +194,21 @@ impl TryFrom<RecordHeader> for Header {
     }
 }
 
+impl Into<Record> for Header {
+    fn into(self) -> Record {
+        Record::Header(RecordHeader {
+            required: Common {
+                version: self.version,
+            },
+            time: self.time,
+            id: self.id,
+            pid: self.pid,
+            cxt: self.cxt.into(),
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 enum HeaderContext {
     Start,
     End,
@@ -190,6 +216,15 @@ enum HeaderContext {
 
 impl HeaderContext {
     const VALID: [RecordContext; 2] = [RecordContext::Start, RecordContext::End];
+}
+
+impl Into<RecordContext> for HeaderContext {
+    fn into(self) -> RecordContext {
+        match self {
+            Self::Start => RecordContext::Start,
+            Self::End => RecordContext::End,
+        }
+    }
 }
 
 impl TryFrom<RecordContext> for HeaderContext {
@@ -204,6 +239,7 @@ impl TryFrom<RecordContext> for HeaderContext {
     }
 }
 
+#[derive(Debug)]
 struct Data {
     pub version: u32,
     pub time: i64,
@@ -228,6 +264,22 @@ impl TryFrom<RecordData> for Data {
     }
 }
 
+impl Into<Record> for Data {
+    fn into(self) -> Record {
+        Record::Data(RecordData {
+            required: Common {
+                version: self.version,
+            },
+            time: self.time,
+            id: self.id,
+            pid: self.pid,
+            cxt: self.cxt.into(),
+            data: self.data.into_bytes(),
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 enum DataContext {
     Stdout,
     Stderr,
@@ -235,6 +287,15 @@ enum DataContext {
 
 impl DataContext {
     const VALID: [RecordContext; 2] = [RecordContext::Stdout, RecordContext::Stderr];
+}
+
+impl Into<RecordContext> for DataContext {
+    fn into(self) -> RecordContext {
+        match self {
+            Self::Stdout => RecordContext::Stdout,
+            Self::Stderr => RecordContext::Stderr,
+        }
+    }
 }
 
 impl TryFrom<RecordContext> for DataContext {

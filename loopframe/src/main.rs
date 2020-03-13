@@ -10,6 +10,7 @@ use {
 };
 
 mod cli;
+mod local;
 mod models;
 mod prelude {
     pub use {
