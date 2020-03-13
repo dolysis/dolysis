@@ -34,13 +34,13 @@ impl FilterSet {
         let on = on.as_ref();
         self.access_set(|store, m| {
             m.values().fold(true, |state, root| {
-                if state == false {
-                    state
-                } else {
+                if state {
                     store
                         .get(*root)
                         .unwrap()
                         .traverse_with(&|s, f, e| recursive_match(s, f, e, on), store)
+                } else {
+                    state
                 }
             })
         })

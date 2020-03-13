@@ -2,7 +2,7 @@
 use {
     crate::{
         error::{CfgErrSubject as Subject, ConfigError},
-        load::filter::{FilterSet, FilterWrap, JoinSet, JoinWrap},
+        load::filters::{FilterSet, FilterWrap, JoinSet, JoinWrap},
         prelude::{CrateResult as Result, *},
     },
     clap::{crate_authors, crate_version, App, Arg, ArgSettings},
@@ -105,15 +105,15 @@ impl ProgramArgs {
         // Check to make sure we have all the required information
         let filter = filter
             .transpose()
-            .and_then(|o| o.ok_or(ConfigError::Missing(Subject::Filter).into()))
+            .and_then(|o| o.ok_or_else(|| ConfigError::Missing(Subject::Filter).into()))
             .log(Level::ERROR)?;
         let join = join
             .transpose()
-            .and_then(|o| o.ok_or(ConfigError::Missing(Subject::Join).into()))
+            .and_then(|o| o.ok_or_else(|| ConfigError::Missing(Subject::Join).into()))
             .log(Level::ERROR)?;
         let exec = exec
             .transpose()
-            .and_then(|o| o.ok_or(ConfigError::Missing(Subject::Join).into()))
+            .and_then(|o| o.ok_or_else(|| ConfigError::Missing(Subject::Join).into()))
             .and_then(|vec| {
                 vec.iter()
                     .try_for_each(|key| match key {
@@ -179,7 +179,9 @@ where
             None => *prev = Some(cur),
             Some(prev) => match (cur.is_ok(), prev.is_ok()) {
                 (true, false) | (false, false) => swap(&mut cur, prev),
-                (true, true) => Err(ConfigError::Duplicate(cur.ok().take().unwrap().into()))?,
+                (true, true) => {
+                    return Err(ConfigError::Duplicate(cur.ok().take().unwrap().into()).into())
+                }
                 (false, true) => (),
             },
         }

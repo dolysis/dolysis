@@ -133,10 +133,10 @@ impl From<DataContext> for Context {
     }
 }
 
-fn as_utf8<S>(item: &Vec<u8>, se: S) -> Result<S::Ok, S::Error>
+fn as_utf8<S>(item: &[u8], se: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
-    let valid = std::str::from_utf8(item).map_err(|e| ser::Error::custom(e))?;
+    let valid = std::str::from_utf8(item).map_err(ser::Error::custom)?;
     se.serialize_str(valid)
 }

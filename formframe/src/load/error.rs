@@ -1,5 +1,5 @@
 use {
-    super::filter::JoinSet,
+    super::filters::JoinSet,
     crate::{models::SpanDisplay, prelude::error},
     serde_yaml::Error as YamlError,
     std::{error, fmt},
@@ -133,7 +133,7 @@ impl fmt::Display for JiiDisplay {
 
 impl error::Error for JiiDisplay {}
 
-fn bp<'a>(descrim: bool, a: &'a str) -> &'a str {
+fn bp(descrim: bool, a: &str) -> &str {
     if descrim {
         a
     } else {

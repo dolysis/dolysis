@@ -1,3 +1,3 @@
 pub mod error;
-pub mod filter;
+pub mod filters;
 mod graph;

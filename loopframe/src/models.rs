@@ -1,7 +1,7 @@
 use {
     crate::{local::LocalRecord, prelude::*, ARGS},
     futures::prelude::*,
-    serde_interface::{Record, RecordInterface},
+    serde_interface::RecordInterface,
     serde_json::{to_writer, to_writer_pretty},
     std::{io, net::SocketAddr, path::Path},
     tokio::{net::TcpListener, prelude::AsyncRead},

@@ -3,7 +3,7 @@
 use {
     crate::{
         cli::OpKind,
-        load::filter::{FilterSet, JoinSetHandle},
+        load::filters::{FilterSet, JoinSetHandle},
         models::{Data, DataContext, Header, HeaderContext, LocalRecord},
         prelude::{CrateResult as Result, *},
     },
@@ -134,53 +134,55 @@ where
     }
 }
 
-async fn handle_header(header: Header, map: &mut HandleMap, mut output_tx: Sender<LocalRecord>) {
+async fn handle_header(header: Header, map: &mut HandleMap, output_tx: Sender<LocalRecord>) {
     match (header.cxt, map.contains_key(header.id.as_str())) {
-        (HeaderContext::Start, false) => {
-            let (out_tx, out_rx) = channel::<LocalRecord>(256);
-            let (err_tx, err_rx) = channel::<LocalRecord>(256);
-
-            // Spawn join-er tasks
-            let stdout = tokio::spawn(
-                handle_stream(out_rx, output_tx.clone()).instrument(always_span!("stdout")),
-            );
-            let stderr = tokio::spawn(
-                handle_stream(err_rx, output_tx.clone()).instrument(always_span!("stderr")),
-            );
-
-            map.insert(header.id.clone(), (out_tx, err_tx, (stdout, stderr)));
-
-            trace!(id = header.id.as_str(), "Added stream to map");
-
-            // Send header to output
-            output_tx
-                .send(LocalRecord::Header(header))
-                .unwrap_or_else(|e| error!("join TX closed unexpectedly: {}", e))
-                .await;
-        }
-        (HeaderContext::End, true) => {
-            let (o, e, barrier) = map.remove(header.id.as_str()).unwrap();
-            let id = header.id.as_str();
-            // Indicate to join-ers that input is finished
-            drop((o, e));
-
-            // Synchronize with join-ers
-            trace!(id, "Just before waiting on stdout/err streams");
-            let (_, _) = tokio::join!(barrier.0, barrier.1);
-
-            trace!(id, "Removed stream from map");
-
-            output_tx
-                .send(LocalRecord::Header(header))
-                .unwrap_or_else(|e| error!("join TX closed unexpectedly: {}", e))
-                .await;
-        }
+        (HeaderContext::Start, false) => header_start(header, map, output_tx).await,
+        (HeaderContext::End, true) => header_end(header, map, output_tx).await,
         (HeaderContext::Start, true) => error!("Duplicate Header record (id: {})", &header.id),
         (HeaderContext::End, false) => error!(
             "Malformed stream, received Header end before start (id: {})",
             &header.id
         ),
     }
+}
+
+async fn header_start(header: Header, map: &mut HandleMap, mut output_tx: Sender<LocalRecord>) {
+    let (out_tx, out_rx) = channel::<LocalRecord>(256);
+    let (err_tx, err_rx) = channel::<LocalRecord>(256);
+
+    // Spawn join-er tasks
+    let stdout =
+        tokio::spawn(handle_stream(out_rx, output_tx.clone()).instrument(always_span!("stdout")));
+    let stderr =
+        tokio::spawn(handle_stream(err_rx, output_tx.clone()).instrument(always_span!("stderr")));
+
+    map.insert(header.id.clone(), (out_tx, err_tx, (stdout, stderr)));
+
+    trace!(id = header.id.as_str(), "Added stream to map");
+
+    // Send header to output
+    output_tx
+        .send(LocalRecord::Header(header))
+        .unwrap_or_else(|e| error!("join TX closed unexpectedly: {}", e))
+        .await;
+}
+
+async fn header_end(header: Header, map: &mut HandleMap, mut output_tx: Sender<LocalRecord>) {
+    let (o, e, barrier) = map.remove(header.id.as_str()).unwrap();
+    let id = header.id.as_str();
+    // Indicate to join-ers that input is finished
+    drop((o, e));
+
+    // Synchronize with join-ers
+    trace!(id, "Just before waiting on stdout/err streams");
+    let (_, _) = tokio::join!(barrier.0, barrier.1);
+
+    trace!(id, "Removed stream from map");
+
+    output_tx
+        .send(LocalRecord::Header(header))
+        .unwrap_or_else(|e| error!("join TX closed unexpectedly: {}", e))
+        .await;
 }
 
 async fn handle_data(data: Data, map: &mut HandleMap) {
@@ -297,14 +299,14 @@ where
 }
 
 trait JoinRecords: Stream + Sized {
-    fn join_records<'cli>(self, handle: JoinSetHandle<'cli>) -> Join<Self>;
+    fn join_records(self, handle: JoinSetHandle<'_>) -> Join<Self>;
 }
 
 impl<St> JoinRecords for St
 where
     St: Stream,
 {
-    fn join_records<'cli>(self, handle: JoinSetHandle<'cli>) -> Join<Self> {
+    fn join_records(self, handle: JoinSetHandle<'_>) -> Join<Self> {
         Join {
             inner: self,
             ongoing: None,
@@ -358,24 +360,18 @@ where
                             }
                             // Ongoing join, which has now finished because the current record IS NOT a join
                             (true, false) => {
-                                let data = this
-                                    .project()
-                                    .ongoing
-                                    .take()
-                                    .map(|data| LocalRecord::Data(data));
+                                let data = this.project().ongoing.take().map(LocalRecord::Data);
                                 return Poll::Ready(data);
                             }
                             // Ongoing join, which will continue as the current record is a join
                             (true, true) => {
-                                this.as_mut()
-                                    .project()
-                                    .ongoing
-                                    .as_mut()
-                                    // Append a newline and extend the base data with the current data
-                                    // Note that copied() here does not copy data only a reference
-                                    .map(|on| {
-                                        on.data.extend(["\n", data.data.as_str()].iter().copied())
-                                    });
+                                // Append a newline and extend the base data with the current data
+                                // Note that copied() here does not copy data only a reference
+                                if let Some(ongoing) = this.as_mut().project().ongoing.as_mut() {
+                                    ongoing
+                                        .data
+                                        .extend(["\n", data.data.as_str()].iter().copied())
+                                };
                             }
                         }
                     }
