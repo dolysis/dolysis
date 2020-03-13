@@ -62,9 +62,6 @@ impl ProgramArgs {
     fn __try_init(cli: App<'_, '_>) -> Result<Self> {
         let store = cli.get_matches();
 
-        //let mut filter = DataInit::Filter(None);
-        //let mut join = DataInit::Join(None);
-
         let mut filter: Option<Result<FilterSet>> = None;
         let mut join: Option<Result<JoinSet>> = None;
         let mut exec: Option<Result<Vec<Exec>>> = None;

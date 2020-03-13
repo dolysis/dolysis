@@ -1,7 +1,8 @@
-#![allow(dead_code)]
+//#![allow(dead_code)]
 
 use {
     crate::{
+        cli::OpKind,
         load::filter::{FilterSet, JoinSetHandle},
         models::{Data, DataContext, Header, HeaderContext, LocalRecord},
         prelude::{CrateResult as Result, *},
@@ -16,14 +17,11 @@ use {
     pin_project::pin_project,
     serde_interface::{Record, RecordInterface},
     std::collections::HashMap,
-    std::{convert::TryFrom, pin::Pin, sync::Arc},
+    std::{convert::TryFrom, pin::Pin},
     tokio::{
-        net::TcpListener,
-        prelude::*,
-        sync::{
-            mpsc::{channel, Receiver, Sender},
-            Barrier,
-        },
+        net::{TcpListener, TcpStream},
+        sync::mpsc::{channel, Receiver, Sender},
+        task::JoinHandle,
         time::Duration,
     },
 };
@@ -55,8 +53,10 @@ pub async fn listener(addr: &str) -> Result<()> {
                         async move {
                             let (tx_out, rx_out) = channel::<LocalRecord>(256);
                             let input = handle_connection(socket)
-                                .then(|stream| split_and_join(stream, tx_out));
-                            let output = rx_out.for_each(|_item| future::ready(()));
+                                .then(|stream| split_and_join(stream, tx_out))
+                                .instrument(always_span!("con.input"));
+                            let output =
+                                handle_output(rx_out).instrument(always_span!("con.output"));
 
                             // Await both the joined records and the final output
                             tokio::join!(tokio::spawn(input), tokio::spawn(output))
@@ -73,8 +73,9 @@ async fn handle_connection<T>(socket: T) -> impl Stream<Item = LocalRecord>
 where
     T: tokio::io::AsyncRead + tokio::io::AsyncWrite,
 {
-    let unbound = RecordInterface::from_read(io::BufReader::new(socket));
-    tokio::stream::StreamExt::timeout(unbound, Duration::from_secs(60))
+    let unbound = RecordInterface::from_read(socket);
+    tokio::stream::StreamExt::timeout(unbound, Duration::from_secs(3))
+        .inspect(|record| debug!("=> {:?}", record))
         .take_while(|timer| future::ready(timer.is_ok()))
         .filter_map(|res| match res.unwrap() {
             Ok(record) => future::ready(Some(record)),
@@ -109,7 +110,14 @@ where
         }))
 }
 
-type HandleMap = HashMap<String, (Sender<LocalRecord>, Sender<LocalRecord>, Arc<Barrier>)>;
+type HandleMap = HashMap<
+    String,
+    (
+        Sender<LocalRecord>,
+        Sender<LocalRecord>,
+        (JoinHandle<()>, JoinHandle<()>),
+    ),
+>;
 
 async fn split_and_join<St>(stream: St, output_tx: Sender<LocalRecord>)
 where
@@ -131,28 +139,36 @@ async fn handle_header(header: Header, map: &mut HandleMap, mut output_tx: Sende
         (HeaderContext::Start, false) => {
             let (out_tx, out_rx) = channel::<LocalRecord>(256);
             let (err_tx, err_rx) = channel::<LocalRecord>(256);
-            let barrier = Arc::new(Barrier::new(3));
 
-            map.insert(header.id.clone(), (out_tx, err_tx, barrier.clone()));
+            // Spawn join-er tasks
+            let stdout = tokio::spawn(
+                handle_stream(out_rx, output_tx.clone()).instrument(always_span!("stdout")),
+            );
+            let stderr = tokio::spawn(
+                handle_stream(err_rx, output_tx.clone()).instrument(always_span!("stderr")),
+            );
+
+            map.insert(header.id.clone(), (out_tx, err_tx, (stdout, stderr)));
+
+            trace!(id = header.id.as_str(), "Added stream to map");
 
             // Send header to output
             output_tx
                 .send(LocalRecord::Header(header))
                 .unwrap_or_else(|e| error!("join TX closed unexpectedly: {}", e))
                 .await;
-
-            // Spawn join-er tasks
-            tokio::spawn(handle_join(barrier.clone(), out_rx, output_tx.clone()));
-            tokio::spawn(handle_join(barrier, err_rx, output_tx.clone()));
         }
         (HeaderContext::End, true) => {
             let (o, e, barrier) = map.remove(header.id.as_str()).unwrap();
-
+            let id = header.id.as_str();
             // Indicate to join-ers that input is finished
             drop((o, e));
 
             // Synchronize with join-ers
-            barrier.wait().await;
+            trace!(id, "Just before waiting on stdout/err streams");
+            let (_, _) = tokio::join!(barrier.0, barrier.1);
+
+            trace!(id, "Removed stream from map");
 
             output_tx
                 .send(LocalRecord::Header(header))
@@ -192,48 +208,47 @@ async fn handle_data(data: Data, map: &mut HandleMap) {
     }
 }
 
-async fn handle_join(
-    barrier: Arc<Barrier>,
-    rx: Receiver<LocalRecord>,
-    mut output_tx: Sender<LocalRecord>,
-) {
-    let handle = cli!().get_join().new_handle();
-    let mut stream = rx.join_records(handle);
+async fn handle_stream(rx: Receiver<LocalRecord>, mut output_tx: Sender<LocalRecord>) {
+    trace!("Starting stream");
+    let joined = rx
+        .inspect(|record| trace!("pre-ops: {:?}", &record))
+        .join_records(cli!().get_join().new_handle());
+    let mut stream = joined; //apply_ops_recursive(Box::pin(joined), cli!().get_exec()).into();
 
     while let Some(record) = stream.next().await {
+        trace!("post-ops: {:?}", &record);
         let _ = output_tx.send(record).await;
     }
 
-    barrier.wait().await;
+    trace!("Finishing stream");
 }
 
-fn apply_recursive<'a, 'cli: 'a, St, I>(
-    stream: St,
+// This causes random dead locks, need to investigate
+fn apply_ops_recursive<'a, 'cli: 'a, I>(
+    stream: Pin<Box<dyn Stream<Item = LocalRecord> + Send + 'a>>,
     mut ops: I,
-) -> Box<dyn Stream<Item = St::Item> + 'a>
+) -> Box<dyn Stream<Item = LocalRecord> + Send + 'a>
 where
-    St: Stream<Item = LocalRecord> + 'a,
     I: Iterator<Item = OpKind<'cli>>,
 {
     match ops.next() {
         Some(OpKind::Filter(name)) => {
-            let next = stream.filter_records(cli!().get_filter(), name);
+            let next = Box::pin(stream.filter_records(cli!().get_filter(), name));
 
-            apply_recursive(next, ops)
+            apply_ops_recursive(next, ops)
         }
         None => Box::new(stream),
     }
 }
 
-enum OpKind<'cli> {
-    Filter(&'cli str),
-}
-
-async fn filter(output_rx: Receiver<LocalRecord>) -> impl Stream<Item = LocalRecord> {
-    output_rx.filter(|record| match record {
-        LocalRecord::Header(_) => future::ready(true),
-        LocalRecord::Data(ref data) => future::ready(cli!().get_filter().is_match_all(&data.data)),
-    })
+async fn handle_output(output_rx: Receiver<LocalRecord>) -> Result<()> {
+    let out_stream = RecordInterface::from_write(TcpStream::connect("127.0.0.1:9000").await?);
+    stream::once(async { Ok(Record::StreamStart) })
+        .chain(output_rx.map(|local| -> Result<Record> { Ok(local.into()) }))
+        .chain(stream::once(async { Ok(Record::StreamEnd) }))
+        .inspect_ok(|record| debug!("<= {}", record.span_display()))
+        .forward(out_stream.sink_err_into())
+        .await
 }
 
 pub trait FindFirstLast: Stream + Sized {
@@ -291,7 +306,7 @@ trait JoinRecords: Stream + Sized {
 
 impl<St> JoinRecords for St
 where
-    St: Stream<Item = LocalRecord>,
+    St: Stream,
 {
     fn join_records<'cli>(self, handle: JoinSetHandle<'cli>) -> Join<Self> {
         Join {
@@ -380,7 +395,7 @@ trait FilterRecords: Stream + Sized {
 
 impl<St> FilterRecords for St
 where
-    St: Stream<Item = LocalRecord>,
+    St: Stream,
 {
     fn filter_records<'cli>(
         self,

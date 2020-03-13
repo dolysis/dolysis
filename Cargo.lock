@@ -389,6 +389,7 @@ dependencies = [
  "clap",
  "futures",
  "lazy_static",
+ "serde",
  "serde_interface 0.3.0 (git+https://github.com/psox/dolysis.git?branch=develop)",
  "serde_json",
  "tokio",

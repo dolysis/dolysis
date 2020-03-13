@@ -61,7 +61,7 @@ fn main() -> MainResult<()> {
     enter!(always_span!("main"));
     info!("Program Args loaded");
 
-    //try_main().map_err(|e| e.into())
+    try_main()?;
 
     Ok(())
 }

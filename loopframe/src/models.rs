@@ -1,5 +1,5 @@
 use {
-    crate::{prelude::*, ARGS},
+    crate::{local::LocalRecord, prelude::*, ARGS},
     futures::prelude::*,
     serde_interface::{Record, RecordInterface},
     serde_json::{to_writer, to_writer_pretty},
@@ -75,14 +75,14 @@ where
     let pretty = ARGS.pretty_print();
     RecordInterface::from_read(read)
         .for_each(|item| async {
-            item.and_then(|record| print_json(pretty, io::stdout(), record))
+            item.and_then(|record| print_json(pretty, io::stdout(), record.into()))
                 .unwrap_or_else(|e| warn!("Item serialization failed: {}", e))
         })
         .instrument(always_span!("printer.json", pretty))
         .await
 }
 
-fn print_json<W>(pretty: bool, writer: W, rcd: Record) -> Result<(), io::Error>
+fn print_json<W>(pretty: bool, writer: W, rcd: LocalRecord) -> Result<(), io::Error>
 where
     W: io::Write,
 {

@@ -18,16 +18,13 @@ filter:
               - re: ^69-\W$ #4
   greeting:
     - any:
-      - re: '(?i)hello\s+\w'
-      - re: '(?i)hi\s+\w'
+      - re: '(?i)hello\s+'
+      - re: '(?i)hi\s+'
 join:
-  start:
-    - re: '\d+'
-  end:
-    - re: '\W'
+  while:
+    - re: 'absolutelynothingshouldbefiltered'
 exec:
-  - filter: date
-  - filter: complex
+  - filter: greeting
 
 # Starting with complex
 # 00. Allocate ROOT node: edges: unknown, and store index (somewhere)                                                 | LVL 0
