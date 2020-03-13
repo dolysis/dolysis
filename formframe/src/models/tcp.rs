@@ -213,7 +213,7 @@ async fn handle_stream(rx: Receiver<LocalRecord>, mut output_tx: Sender<LocalRec
     let joined = rx
         .inspect(|record| trace!("pre-ops: {:?}", &record))
         .join_records(cli!().get_join().new_handle());
-    let mut stream = joined; //apply_ops_recursive(Box::pin(joined), cli!().get_exec()).into();
+    let mut stream = apply_ops(Box::pin(joined), cli!().get_exec());
 
     while let Some(record) = stream.next().await {
         trace!("post-ops: {:?}", &record);
@@ -224,21 +224,17 @@ async fn handle_stream(rx: Receiver<LocalRecord>, mut output_tx: Sender<LocalRec
 }
 
 // This causes random dead locks, need to investigate
-fn apply_ops_recursive<'a, 'cli: 'a, I>(
-    stream: Pin<Box<dyn Stream<Item = LocalRecord> + Send + 'a>>,
-    mut ops: I,
-) -> Box<dyn Stream<Item = LocalRecord> + Send + 'a>
+fn apply_ops<'a, 'cli: 'a, St: 'a, I>(
+    stream: St,
+    ops: I,
+) -> Box<dyn Stream<Item = LocalRecord> + Unpin + Send + 'a>
 where
+    St: Stream<Item = LocalRecord> + Unpin + Send,
     I: Iterator<Item = OpKind<'cli>>,
 {
-    match ops.next() {
-        Some(OpKind::Filter(name)) => {
-            let next = Box::pin(stream.filter_records(cli!().get_filter(), name));
-
-            apply_ops_recursive(next, ops)
-        }
-        None => Box::new(stream),
-    }
+    ops.fold(Box::new(stream), |state, op| match op {
+        OpKind::Filter(name) => Box::new(state.filter_records(cli!().get_filter(), name)),
+    })
 }
 
 async fn handle_output(output_rx: Receiver<LocalRecord>) -> Result<()> {
@@ -337,53 +333,54 @@ where
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let mut this = self;
 
-        match ready!(this.as_mut().project().inner.poll_next(cx)) {
-            None => Poll::Ready(None),
-            Some(record) => match record {
-                header @ LocalRecord::Header(_) => Poll::Ready(Some(header)),
-                LocalRecord::Data(data) => {
-                    // There are 4 possible outcomes for a Data record depending of the state of
-                    // (A, B) where A and B are bools and represent:
-                    // A: Whether we currently have an ongoing join
-                    // B: Whether the current record should be joined
-                    match (
-                        this.ongoing.is_some(),
-                        this.as_mut()
-                            .project()
-                            .handle
-                            .should_join(data.data.as_str()),
-                    ) {
-                        // No ongoing join & current record is not a join
-                        (false, false) => Poll::Ready(Some(LocalRecord::Data(data))),
-                        // No ongoing join, but the current record IS a join... set it as the ongoing join
-                        (false, true) => {
-                            this.as_mut().project().ongoing.replace(data);
-                            Poll::Pending
-                        }
-                        // Ongoing join, which has now finished because the current record IS NOT a join
-                        (true, false) => {
-                            let data = this
+        loop {
+            match ready!(this.as_mut().project().inner.poll_next(cx)) {
+                None => return Poll::Ready(None),
+                Some(record) => match record {
+                    header @ LocalRecord::Header(_) => return Poll::Ready(Some(header)),
+                    LocalRecord::Data(data) => {
+                        // There are 4 possible outcomes for a Data record depending of the state of
+                        // (A, B) where A and B are bools and represent:
+                        // A: Whether we currently have an ongoing join
+                        // B: Whether the current record should be joined
+                        match (
+                            this.ongoing.is_some(),
+                            this.as_mut()
                                 .project()
-                                .ongoing
-                                .take()
-                                .map(|data| LocalRecord::Data(data));
-                            Poll::Ready(data)
-                        }
-                        // Ongoing join, which will continue as the current record is a join
-                        (true, true) => {
-                            this.project()
-                                .ongoing
-                                .as_mut()
-                                // Append a newline and extend the base data with the current data
-                                // Note that copied() here does not copy data only a reference
-                                .map(|on| {
-                                    on.data.extend(["\n", data.data.as_str()].iter().copied())
-                                });
-                            Poll::Pending
+                                .handle
+                                .should_join(data.data.as_str()),
+                        ) {
+                            // No ongoing join & current record is not a join
+                            (false, false) => return Poll::Ready(Some(LocalRecord::Data(data))),
+                            // No ongoing join, but the current record IS a join... set it as the ongoing join
+                            (false, true) => {
+                                this.as_mut().project().ongoing.replace(data);
+                            }
+                            // Ongoing join, which has now finished because the current record IS NOT a join
+                            (true, false) => {
+                                let data = this
+                                    .project()
+                                    .ongoing
+                                    .take()
+                                    .map(|data| LocalRecord::Data(data));
+                                return Poll::Ready(data);
+                            }
+                            // Ongoing join, which will continue as the current record is a join
+                            (true, true) => {
+                                this.as_mut()
+                                    .project()
+                                    .ongoing
+                                    .as_mut()
+                                    // Append a newline and extend the base data with the current data
+                                    // Note that copied() here does not copy data only a reference
+                                    .map(|on| {
+                                        on.data.extend(["\n", data.data.as_str()].iter().copied())
+                                    });
+                            }
                         }
                     }
-                }
-            },
+                },
+            }
         }
     }
 }
@@ -430,15 +427,21 @@ where
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let mut this = self;
 
-        match ready!(this.as_mut().project().inner.poll_next(cx)) {
-            Some(record) => match record {
-                header @ LocalRecord::Header(_) => Poll::Ready(Some(header)),
-                LocalRecord::Data(data) if this.set.is_match_with(this.filter_name, &data.data) => {
-                    Poll::Ready(Some(LocalRecord::Data(data)))
-                }
-                LocalRecord::Data(_) => Poll::Pending,
-            },
-            None => Poll::Ready(None),
+        loop {
+            match ready!(this.as_mut().project().inner.poll_next(cx)) {
+                Some(record) => match record {
+                    header @ LocalRecord::Header(_) => return Poll::Ready(Some(header)),
+                    LocalRecord::Data(record) => {
+                        if this.set.is_match_with(this.filter_name, &record.data) {
+                            trace!(data = %record.data, "MATCH");
+                            return Poll::Ready(Some(LocalRecord::Data(record)));
+                        } else {
+                            trace!(data = %record.data, "NO MATCH");
+                        }
+                    }
+                },
+                None => return Poll::Ready(None),
+            }
         }
     }
 }
