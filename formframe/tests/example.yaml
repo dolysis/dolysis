@@ -22,9 +22,11 @@ filter:
       - re: '(?i)hi\s+'
 join:
   while:
-    - re: 'absolutelynothingshouldbefiltered'
+    - re: 'absolutelynothingshouldbejoined'
 exec:
+  - join
   - filter: greeting
+  - load: localhost:9000
 
 # Starting with complex
 # 00. Allocate ROOT node: edges: unknown, and store index (somewhere)                                                 | LVL 0

@@ -238,12 +238,25 @@ where
 }
 
 async fn handle_output(output_rx: Receiver<LocalRecord>) -> Result<()> {
-    let out_stream = RecordInterface::from_write(TcpStream::connect("127.0.0.1:9000").await?);
+    let out_stream: Box<dyn tokio::io::AsyncWrite + Unpin + Send> = match cli!()
+        .get_exec_list()
+        .get_loads()
+        .and_then(|mut iter| iter.next())
+        .map(|load| TcpStream::connect(load.0))
+    {
+        Some(tcp) => tcp
+            .inspect_err(|e| error!("Could not connect to output: {}", e))
+            .await
+            .ok()
+            .map(|tcp| Box::new(tcp) as Box<dyn tokio::io::AsyncWrite + Unpin + Send>),
+        None => Some(Box::new(tokio::io::sink()) as Box<dyn tokio::io::AsyncWrite + Unpin + Send>),
+    }
+    .unwrap_or_else(|| Box::new(tokio::io::sink()));
     stream::once(async { Ok(Record::StreamStart) })
         .chain(output_rx.map(|local| -> Result<Record> { Ok(local.into()) }))
         .chain(stream::once(async { Ok(Record::StreamEnd) }))
         .inspect_ok(|record| debug!("<= {}", record.span_display()))
-        .forward(out_stream.sink_err_into())
+        .forward(RecordInterface::from_write(out_stream).sink_err_into())
         .await
 }
 
