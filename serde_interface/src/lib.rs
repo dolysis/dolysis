@@ -8,6 +8,6 @@ pub use crate::{
     error::CrateError as InterfaceError,
     markers::{DataContext, KindMarker, TagMarker},
     record::*,
-    tokio_cbor::{Cbor, RecordFrame, RecordInterface, SymmetricalCbor},
+    tokio_cbor::{Bytes, BytesMut, Cbor, RecordFrame, RecordInterface, SymmetricalCbor},
     traits::{Marker, Repr},
 };

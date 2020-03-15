@@ -767,7 +767,7 @@ dependencies = [
 
 [[package]]
 name = "serde_interface"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "bytes",
  "futures",

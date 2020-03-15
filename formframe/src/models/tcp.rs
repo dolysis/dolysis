@@ -211,32 +211,30 @@ async fn handle_data(data: Data, map: &mut HandleMap) {
 }
 
 async fn handle_stream(rx: Receiver<LocalRecord>, mut output_tx: Sender<LocalRecord>) {
-    trace!("Starting stream");
-    let joined = rx
-        .inspect(|record| trace!("pre-ops: {:?}", &record))
-        .join_records(cli!().get_join().new_handle());
-    let mut stream = apply_ops(Box::pin(joined), cli!().get_exec());
+    let stream = rx.inspect(|record| trace!("pre-ops: {:?}", &record));
+    let mut stream = apply_ops(stream, cli!().get_exec_list().get_ops());
 
     while let Some(record) = stream.next().await {
         trace!("post-ops: {:?}", &record);
         let _ = output_tx.send(record).await;
     }
-
-    trace!("Finishing stream");
 }
 
-// This causes random dead locks, need to investigate
 fn apply_ops<'a, 'cli: 'a, St: 'a, I>(
     stream: St,
-    ops: I,
+    ops: Option<I>,
 ) -> Box<dyn Stream<Item = LocalRecord> + Unpin + Send + 'a>
 where
     St: Stream<Item = LocalRecord> + Unpin + Send,
     I: Iterator<Item = OpKind<'cli>>,
 {
-    ops.fold(Box::new(stream), |state, op| match op {
-        OpKind::Filter(name) => Box::new(state.filter_records(cli!().get_filter(), name)),
-    })
+    match ops {
+        Some(ops) => ops.fold(Box::new(stream), |state, op| match op {
+            OpKind::Join => Box::new(state.join_records(cli!().get_join().new_handle())),
+            OpKind::Filter(name) => Box::new(state.filter_records(cli!().get_filter(), name)),
+        }),
+        None => Box::new(stream),
+    }
 }
 
 async fn handle_output(output_rx: Receiver<LocalRecord>) -> Result<()> {

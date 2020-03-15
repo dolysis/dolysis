@@ -168,6 +168,7 @@ pub enum CfgErrSubject {
     Map,
     Transform,
     Exec,
+    Load,
 }
 
 impl fmt::Display for CfgErrSubject {
@@ -178,6 +179,7 @@ impl fmt::Display for CfgErrSubject {
             Self::Map => format_args!("map"),
             Self::Transform => format_args!("transform"),
             Self::Exec => format_args!("exec"),
+            Self::Load => format_args!("load"),
         };
 
         write!(f, "{}", o)

@@ -1,6 +1,5 @@
 use {
     crate::record::Record,
-    bytes::{Bytes, BytesMut},
     futures::{pin_mut, prelude::*, ready},
     pin_project::pin_project,
     serde::Serialize,
@@ -14,7 +13,10 @@ use {
     tokio_util::codec::{Framed, FramedRead, FramedWrite, LengthDelimitedCodec},
 };
 
-pub use tokio_serde::formats::{Cbor, SymmetricalCbor};
+pub use {
+    bytes::{Bytes, BytesMut},
+    tokio_serde::formats::{Cbor, SymmetricalCbor},
+};
 
 /// Contains convenience methods for generating framed readers/writers
 pub struct RecordFrame;

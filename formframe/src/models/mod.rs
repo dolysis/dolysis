@@ -6,6 +6,7 @@ use {
     std::{
         convert::{TryFrom, TryInto},
         fmt,
+        net::ToSocketAddrs,
     },
     tracing_subscriber::{EnvFilter, FmtSubscriber},
 };
