@@ -85,7 +85,7 @@ impl ProgramArgs {
 
         let (filter, join, exec) = store
             .values_of("config-file")
-            .map(|iter| instantiate_sets(iter))
+            .map(instantiate_sets)
             .unwrap()?;
 
         Ok(Self {
@@ -277,13 +277,7 @@ impl ExecList {
     fn new(backing: Vec<DataOp>) -> Self {
         let mut inner = backing;
         inner.sort();
-        inner.dedup_by(|a, b| {
-            if *a == *b && *b == DataOp::Join {
-                true
-            } else {
-                false
-            }
-        });
+        inner.dedup_by(|a, b| *a == *b && *b == DataOp::Join);
 
         let ops_r = inner
             .iter()
