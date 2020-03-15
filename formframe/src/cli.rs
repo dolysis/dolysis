@@ -12,7 +12,6 @@ use {
         convert::{TryFrom, TryInto},
         fs::File,
         net::ToSocketAddrs,
-        ops::Range,
         path::Path,
     },
 };
@@ -422,4 +421,4 @@ pub enum OpKind<'cli> {
     Join,
 }
 
-pub struct Load<'cli>(&'cli str);
+pub struct Load<'cli>(pub &'cli str);
