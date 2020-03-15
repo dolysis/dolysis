@@ -3,10 +3,9 @@ use {
     bytes::{Bytes, BytesMut},
     futures::{pin_mut, prelude::*, ready},
     pin_project::pin_project,
-    serde::{Deserialize, Serialize},
+    serde::Serialize,
     std::{
         io,
-        marker::PhantomData,
         pin::Pin,
         task::{Context, Poll},
     },
@@ -14,6 +13,8 @@ use {
     tokio_serde::{Deserializer, Serializer},
     tokio_util::codec::{Framed, FramedRead, FramedWrite, LengthDelimitedCodec},
 };
+
+pub use tokio_serde::formats::{Cbor, SymmetricalCbor};
 
 /// Contains convenience methods for generating framed readers/writers
 pub struct RecordFrame;
@@ -215,55 +216,5 @@ where
     fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         ready!(self.as_mut().project().inner.poll_flush(cx))?;
         self.project().inner.poll_close(cx)
-    }
-}
-
-/// Generic visitor that implements tokio-serde's De/Serialize traits
-pub struct Cbor<Item, SinkItem> {
-    _mkr: PhantomData<(Item, SinkItem)>,
-}
-
-impl<Item, SinkItem> Default for Cbor<Item, SinkItem> {
-    fn default() -> Self {
-        Self { _mkr: PhantomData }
-    }
-}
-
-/// Note this is merely an alias for Cbor where the sink's
-/// item is the same as the item that is serialized
-pub type SymmetricalCbor<T> = Cbor<T, T>;
-
-impl<Item, SinkItem> Deserializer<Item> for Cbor<Item, SinkItem>
-where
-    for<'a> Item: Deserialize<'a>,
-{
-    type Error = io::Error;
-
-    fn deserialize(self: Pin<&mut Self>, src: &BytesMut) -> Result<Item, Self::Error> {
-        serde_cbor::from_slice(src.as_ref()).map_err(into_io_error)
-    }
-}
-
-impl<Item, SinkItem> Serializer<SinkItem> for Cbor<Item, SinkItem>
-where
-    SinkItem: Serialize,
-{
-    type Error = io::Error;
-
-    fn serialize(self: Pin<&mut Self>, item: &SinkItem) -> Result<Bytes, Self::Error> {
-        serde_cbor::to_vec(item)
-            .map_err(into_io_error)
-            .map(Into::into)
-    }
-}
-
-fn into_io_error(cbor_err: serde_cbor::Error) -> io::Error {
-    use {io::ErrorKind, serde_cbor::error::Category};
-
-    match cbor_err.classify() {
-        Category::Eof => io::Error::new(ErrorKind::UnexpectedEof, cbor_err),
-        Category::Syntax => io::Error::new(ErrorKind::InvalidInput, cbor_err),
-        Category::Data => io::Error::new(ErrorKind::InvalidData, cbor_err),
-        Category::Io => io::Error::new(ErrorKind::Other, cbor_err),
     }
 }
