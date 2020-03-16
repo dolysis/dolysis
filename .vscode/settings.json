@@ -46,6 +46,5 @@
         "ul-style": false,
         "code": "fenced",
     },
-    "markdownlint.run": "onType",
     "prettier.useTabs": false,
 }

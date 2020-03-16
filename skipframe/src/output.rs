@@ -117,7 +117,8 @@ where
     {
         let mut map = serializer.serialize_map(None)?;
         let mut iter = self.inner.borrow_mut();
-        while let Some(item) = iter.next() {
+        // ref deref required circa rust 1.41.1, the compiler will not infer it
+        for item in &mut *iter {
             map.serialize_entry(&item.as_marker(), &item)?;
         }
         map.end()

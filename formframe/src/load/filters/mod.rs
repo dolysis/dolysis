@@ -1,55 +1,23 @@
 use {
-    super::error::{Err, LoadError},
-    crate::{graph::Node, prelude::*},
+    super::{
+        error::{Err, LoadError},
+        graph::Node,
+    },
+    crate::prelude::*,
     generational_arena::{Arena, Index},
     regex::Regex,
     serde::{de, Deserialize, Deserializer},
-    serde_yaml::from_reader as read_yaml,
-    std::{collections::HashMap, io},
 };
 
-pub use serial_traverse as is_match;
+pub use {
+    filter::{FilterSet, FilterWrap},
+    join::{JoinSet, JoinSetHandle, JoinWrap},
+};
 
-#[derive(Debug)]
-pub struct FilterSet {
-    named_set: HashMap<String, Index>,
-    store: Arena<Node<FilterData>>,
-}
+mod filter;
+mod join;
 
-impl FilterSet {
-    pub fn try_new<R>(data: R) -> Result<Self, LoadError>
-    where
-        R: io::Read,
-    {
-        let wrap: FWrap = read_yaml(data)?;
-
-        trace!("Yaml syntax valid");
-
-        let mut store = Arena::new();
-        let mut set = HashMap::new();
-
-        wrap.filter.into_iter().try_for_each(|(name, seeds)| {
-            enter!(always_span!("init.filter", filter.name = name.as_str()));
-            set.insert(name.clone(), init_tree(&mut store, seeds))
-                .map_or_else(|| Ok(()), |_| Err(Err::DuplicateRootName(name)))
-        })?;
-
-        Ok(Self {
-            named_set: set,
-            store,
-        })
-    }
-
-    pub fn access_set<F, T>(&self, f: F) -> T
-    where
-        F: Fn(&Arena<Node<FilterData>>, &HashMap<String, Index>) -> T,
-        T: Sized + Send + Sync,
-    {
-        f(&self.store, &self.named_set)
-    }
-}
-
-pub fn serial_traverse(
+pub fn recursive_match(
     arena: &Arena<Node<FilterData>>,
     data: &FilterData,
     edges: &[Index],
@@ -65,12 +33,12 @@ pub fn serial_traverse(
         // Wait for all success / return on first error
         NodeType::And => {
             let res: Result<(), ()> = edges
-                .into_iter()
+                .iter()
                 .map(|idx| {
                     arena
                         .get(*idx)
                         .unwrap()
-                        .traverse_with(&|a, d, i| serial_traverse(a, d, i, text), arena)
+                        .traverse_with(&|a, d, i| recursive_match(a, d, i, text), arena)
                 })
                 .map(|b| match b {
                     true => Ok(()),
@@ -84,12 +52,12 @@ pub fn serial_traverse(
         // Return first success / wait for all failure
         NodeType::Or => {
             let res: Result<(), ()> = edges
-                .into_iter()
+                .iter()
                 .map(|idx| {
                     arena
                         .get(*idx)
                         .unwrap()
-                        .traverse_with(&|a, d, i| serial_traverse(a, d, i, text), arena)
+                        .traverse_with(&|a, d, i| recursive_match(a, d, i, text), arena)
                 })
                 .map(|b| match b {
                     false => Ok(()),
@@ -104,9 +72,9 @@ pub fn serial_traverse(
 }
 
 fn init_tree(arena: &mut Arena<Node<FilterData>>, seeds: Vec<FilterSeed>) -> Index {
-    trace!("Starting filter's recursive init");
+    trace!("Starting recursive init");
     let mut top_level = init_recursive(arena, false, seeds.into_iter());
-    trace!("Finished filter's recursive init");
+    trace!("Finished recursive init");
 
     match top_level.len() {
         // If the tree is completely empty, return a 'And' root that always returns true
@@ -223,8 +191,8 @@ pub enum BoolExt {
 }
 
 impl BoolExt {
-    fn as_bool(&self) -> bool {
-        (*self).into()
+    fn as_bool(self) -> bool {
+        self.into()
     }
 }
 
@@ -290,18 +258,11 @@ pub enum FilterSeed {
     Regex(Regex),
 }
 
-#[derive(Deserialize, Debug)]
-struct FWrap {
-    filter: DeIntermediate,
-}
-
-type DeIntermediate = HashMap<String, Vec<FilterSeed>>;
-
 fn de_regex<'de, D>(de: D) -> Result<Regex, D::Error>
 where
     D: Deserializer<'de>,
 {
     let type_hint: String = Deserialize::deserialize(de)?;
 
-    Regex::new(&type_hint).map_err(|e| de::Error::custom(e))
+    Regex::new(&type_hint).map_err(de::Error::custom)
 }

@@ -11,7 +11,7 @@
   - "serde_interface/**/*"
 
 dep-change:
-  - "**/Cargo.lock"
+  - "*/**/Cargo.lock"
 
 workflow:
   - ".github/**/*"

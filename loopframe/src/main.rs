@@ -1,3 +1,5 @@
+#![allow(clippy::match_bool)]
+
 use {
     crate::{
         cli::{generate_cli, ProgramArgs},
@@ -8,6 +10,7 @@ use {
 };
 
 mod cli;
+mod local;
 mod models;
 mod prelude {
     pub use {

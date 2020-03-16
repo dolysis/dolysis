@@ -47,8 +47,7 @@ pub fn process_child(
     trace!("Processing child {}", handle.id());
 
     let mut body = || -> Result<()> {
-        let mut sink =
-            RecordInterface::new_sink(tx_write.clone().sink_map_err(|e| CrateError::from(e)));
+        let mut sink = RecordInterface::new_sink(tx_write.clone().sink_map_err(CrateError::from));
 
         block_on(sink.send(RecordKind::new(
             KindMarker::Header,
@@ -118,8 +117,7 @@ where
     let mut log_t_bytes = 0u64;
 
     let buffer = io::BufReader::new(read);
-    let mut sink =
-        RecordInterface::new_sink(tx_write.clone().sink_map_err(|e| CrateError::from(e)));
+    let mut sink = RecordInterface::new_sink(tx_write.sink_map_err(CrateError::from));
 
     buffer
         .for_byte_line(|line| {

@@ -76,33 +76,33 @@ impl Record {
 
 #[derive(Debug)]
 pub struct Data {
-    required: Common,
-    time: i64,
-    id: String,
-    pid: u32,
-    cxt: DataContext,
-    data: Vec<u8>,
+    pub required: Common,
+    pub time: i64,
+    pub id: String,
+    pub pid: u32,
+    pub cxt: DataContext,
+    pub data: Vec<u8>,
 }
 
 #[derive(Debug)]
 pub struct Header {
-    required: Common,
-    time: i64,
-    id: String,
-    pid: u32,
-    cxt: DataContext,
+    pub required: Common,
+    pub time: i64,
+    pub id: String,
+    pub pid: u32,
+    pub cxt: DataContext,
 }
 
 #[derive(Debug)]
 pub struct Error {
-    required: Common,
-    error: CrateError,
+    pub required: Common,
+    pub error: CrateError,
 }
 
 #[derive(Debug)]
 pub struct Log {
-    required: Common,
-    log: String,
+    pub required: Common,
+    pub log: String,
 }
 
 /// Contains any records that are common to every record kind
