@@ -12,39 +12,15 @@ use {
     std::fmt,
 };
 
-#[derive(Debug, Serialize)]
-#[serde(tag = "t", content = "c")]
-pub enum RecordKind<R> {
-    #[serde(rename = "ss")]
-    StreamStart,
-    #[serde(rename = "se")]
-    StreamEnd,
-    #[serde(rename = "h")]
-    Header(R),
-    #[serde(rename = "d")]
-    Data(R),
-    #[serde(rename = "l")]
-    Log(R),
-    #[serde(rename = "e")]
-    Error(R),
-}
-
-impl<R> RecordKind<R> {
-    pub fn new<M>(mkr: M, record: R) -> Self
-    where
-        M: Marker<Marker = KindMarker>,
-    {
-        match mkr.as_marker() {
-            KindMarker::StreamStart => Self::StreamStart,
-            KindMarker::StreamEnd => Self::StreamEnd,
-            KindMarker::Header => Self::Header(record),
-            KindMarker::Data => Self::Data(record),
-            KindMarker::Error => Self::Error(record),
-            KindMarker::Log => Self::Log(record),
-        }
-    }
-}
-
+/// The in-memory representation of a Record. This is the mechanism by which the
+/// binaries transmit information across the wire. This struct has an intentionally
+/// minimalistic API. Any manipulation should be done via some local representation,
+/// making use of From/Into (or some similar interface) for moving into and out of
+/// said representation.
+///
+/// As an aside, this structure's Serde impl is optimized for size and _highly_ unlikely
+/// to de/serialize into a valid Record if the data is not serialized *and* deserialized as this struct.
+/// Do not attempt to de/serialize into some intermediary struct. It will end badly.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "t", content = "c")]
 pub enum Record {
@@ -63,6 +39,7 @@ pub enum Record {
 }
 
 impl Record {
+    /// Convenience function for generating Record errors
     pub fn new_error<E>(version: u32, err: E) -> Self
     where
         E: Into<CrateError>,
@@ -74,6 +51,50 @@ impl Record {
     }
 }
 
+/// A hacky trapdoor for creating a Record. It is the users responsibility
+/// to ensure that the 'Record' is a valid Record kind (i.e: a `Header` or `Data`)
+// TODO: This really should be removed, it is a workaround for serializing non-owned data,
+// i.e a &[u8] instead of a Vec<u8>. Realistically, to solve this problem we would need to
+// create some sort of intermediary structure that both an Owned and Borrowed Record
+// would de/serialize as.
+#[derive(Debug, Serialize)]
+#[serde(tag = "t", content = "c")]
+pub enum RecordKind<R> {
+    #[serde(rename = "ss")]
+    StreamStart,
+    #[serde(rename = "se")]
+    StreamEnd,
+    #[serde(rename = "h")]
+    Header(R),
+    #[serde(rename = "d")]
+    Data(R),
+    #[serde(rename = "l")]
+    Log(R),
+    #[serde(rename = "e")]
+    Error(R),
+}
+
+impl<R> RecordKind<R> {
+    /// Create a new RecordKind. It is the user's responsibility to ensure that the given `R` is a valid
+    /// record.
+    pub fn new<M>(mkr: M, record: R) -> Self
+    where
+        M: Marker<Marker = KindMarker>,
+    {
+        match mkr.as_marker() {
+            KindMarker::StreamStart => Self::StreamStart,
+            KindMarker::StreamEnd => Self::StreamEnd,
+            KindMarker::Header => Self::Header(record),
+            KindMarker::Data => Self::Data(record),
+            KindMarker::Error => Self::Error(record),
+            KindMarker::Log => Self::Log(record),
+        }
+    }
+}
+
+/// Contains a byte slice and related context. This slice contains some unit of data that is conceptually
+/// whole or 'one' for its intended destination. It should be preceded by _one_ header record, `Context::Start`
+/// and any other of other `Data` records. It should be followed by any number of `Data` records and a single Header `Context::End`
 #[derive(Debug)]
 pub struct Data {
     pub required: Common,
@@ -84,6 +105,8 @@ pub struct Data {
     pub data: Vec<u8>,
 }
 
+/// A header / tail record for gracefully terminating a stream of Data records. Conceptually, it is responsible for starting
+/// and terminating a stream of `Data` records
 #[derive(Debug)]
 pub struct Header {
     pub required: Common,
@@ -93,12 +116,14 @@ pub struct Header {
     pub cxt: DataContext,
 }
 
+/// Contains any error messages that were caused by an unexpected / non-graceful termination of a project binary
 #[derive(Debug)]
 pub struct Error {
     pub required: Common,
     pub error: CrateError,
 }
 
+/// Contains any log messages that were produced by a project binary up the data stream.
 #[derive(Debug)]
 pub struct Log {
     pub required: Common,
