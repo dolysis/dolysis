@@ -173,7 +173,7 @@ where
     IF: TryStream<Ok = BytesMut, Error = E>,
     E: From<io::Error>,
 {
-    type Item = Result<Record, IF::Error>;
+    type Item = Result<Record<'static>, IF::Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         match ready!(self.as_mut().project().inner.poll_next(cx)) {

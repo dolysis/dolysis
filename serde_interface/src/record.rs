@@ -9,7 +9,7 @@ use {
         ser::{SerializeMap, Serializer},
         {Deserialize, Serialize},
     },
-    std::fmt,
+    std::{borrow::Cow, fmt},
 };
 
 /// The in-memory representation of a Record. This is the mechanism by which the
@@ -23,7 +23,7 @@ use {
 /// Do not attempt to de/serialize into some intermediary struct. It will end badly.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "t", content = "c")]
-pub enum Record {
+pub enum Record<'a> {
     #[serde(rename = "ss")]
     StreamStart,
     #[serde(rename = "se")]
@@ -31,14 +31,14 @@ pub enum Record {
     #[serde(rename = "h")]
     Header(Header),
     #[serde(rename = "d")]
-    Data(Data),
+    Data(Data<'a>),
     #[serde(rename = "l")]
     Log(Log),
     #[serde(rename = "e")]
     Error(Error),
 }
 
-impl Record {
+impl<'a> Record<'a> {
     /// Convenience function for generating Record errors
     pub fn new_error<E>(version: u32, err: E) -> Self
     where
@@ -94,15 +94,15 @@ impl<R> RecordKind<R> {
 
 /// Contains a byte slice and related context. This slice contains some unit of data that is conceptually
 /// whole or 'one' for its intended destination. It should be preceded by _one_ header record, `Context::Start`
-/// and any other of other `Data` records. It should be followed by any number of `Data` records and a single Header `Context::End`
+/// and any number of other `Data` records. It should be followed by any number of `Data` records and a single Header `Context::End`
 #[derive(Debug)]
-pub struct Data {
+pub struct Data<'a> {
     pub required: Common,
     pub time: i64,
     pub id: String,
     pub pid: u32,
     pub cxt: DataContext,
-    pub data: Vec<u8>,
+    pub data: Cow<'a, str>,
 }
 
 /// A header / tail record for gracefully terminating a stream of Data records. Conceptually, it is responsible for starting
@@ -130,7 +130,7 @@ pub struct Log {
     pub log: String,
 }
 
-/// Contains any records that are common to every record kind
+/// Contains any fields that are common to every record kind
 #[derive(Debug)]
 pub struct Common {
     pub version: u32,
@@ -142,7 +142,7 @@ impl Common {
     }
 }
 
-impl Serialize for Data {
+impl<'a> Serialize for Data<'a> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -153,12 +153,12 @@ impl Serialize for Data {
         map.serialize_entry(&TagMarker::Id, &self.id)?;
         map.serialize_entry(&TagMarker::Pid, &self.pid)?;
         map.serialize_entry(&TagMarker::DataContext, &self.cxt)?;
-        map.serialize_entry(&TagMarker::Data, &self.data)?;
+        map.serialize_entry(&TagMarker::Data, self.data.as_ref())?;
         map.end()
     }
 }
 
-impl<'de> Deserialize<'de> for Data {
+impl<'de> Deserialize<'de> for Data<'_> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
@@ -166,7 +166,7 @@ impl<'de> Deserialize<'de> for Data {
         struct DataVisitor;
 
         impl<'de> Visitor<'de> for DataVisitor {
-            type Value = Data;
+            type Value = Data<'static>;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
                 formatter.write_str("Expecting a valid 'Data' record")
@@ -212,7 +212,9 @@ impl<'de> Deserialize<'de> for Data {
                     id: id.ok_or_else(|| de::Error::missing_field("id"))?,
                     pid: pid.ok_or_else(|| de::Error::missing_field("pid"))?,
                     cxt: cxt.ok_or_else(|| de::Error::missing_field("cxt"))?,
-                    data: data.ok_or_else(|| de::Error::missing_field("data"))?,
+                    data: data
+                        .map(|cow: String| cow.into())
+                        .ok_or_else(|| de::Error::missing_field("data"))?,
                 })
             }
         }
