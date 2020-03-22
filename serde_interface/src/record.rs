@@ -23,22 +23,22 @@ use {
 /// Do not attempt to de/serialize into some intermediary struct. It will end badly.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "t", content = "c")]
-pub enum Record<'a> {
+pub enum Record<'i, 'd> {
     #[serde(rename = "ss")]
     StreamStart,
     #[serde(rename = "se")]
     StreamEnd,
     #[serde(rename = "h")]
-    Header(Header),
+    Header(Header<'i>),
     #[serde(rename = "d")]
-    Data(Data<'a>),
+    Data(Data<'i, 'd>),
     #[serde(rename = "l")]
     Log(Log),
     #[serde(rename = "e")]
     Error(Error),
 }
 
-impl<'a> Record<'a> {
+impl<'i, 'd> Record<'i, 'd> {
     /// Convenience function for generating Record errors
     pub fn new_error<E>(version: u32, err: E) -> Self
     where
@@ -96,22 +96,22 @@ impl<R> RecordKind<R> {
 /// whole or 'one' for its intended destination. It should be preceded by _one_ header record, `Context::Start`
 /// and any number of other `Data` records. It should be followed by any number of `Data` records and a single Header `Context::End`
 #[derive(Debug)]
-pub struct Data<'a> {
+pub struct Data<'i, 'd> {
     pub required: Common,
     pub time: i64,
-    pub id: String,
+    pub id: Cow<'i, str>,
     pub pid: u32,
     pub cxt: DataContext,
-    pub data: Cow<'a, str>,
+    pub data: Cow<'d, str>,
 }
 
 /// A header / tail record for gracefully terminating a stream of Data records. Conceptually, it is responsible for starting
 /// and terminating a stream of `Data` records
 #[derive(Debug)]
-pub struct Header {
+pub struct Header<'i> {
     pub required: Common,
     pub time: i64,
-    pub id: String,
+    pub id: Cow<'i, str>,
     pub pid: u32,
     pub cxt: DataContext,
 }
@@ -142,7 +142,7 @@ impl Common {
     }
 }
 
-impl<'a> Serialize for Data<'a> {
+impl<'i, 'd> Serialize for Data<'i, 'd> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -158,7 +158,7 @@ impl<'a> Serialize for Data<'a> {
     }
 }
 
-impl<'de> Deserialize<'de> for Data<'_> {
+impl<'de> Deserialize<'de> for Data<'_, '_> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
@@ -166,7 +166,7 @@ impl<'de> Deserialize<'de> for Data<'_> {
         struct DataVisitor;
 
         impl<'de> Visitor<'de> for DataVisitor {
-            type Value = Data<'static>;
+            type Value = Data<'static, 'static>;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
                 formatter.write_str("Expecting a valid 'Data' record")
@@ -209,7 +209,9 @@ impl<'de> Deserialize<'de> for Data<'_> {
                         version: version.ok_or_else(|| de::Error::missing_field("version"))?,
                     },
                     time: time.ok_or_else(|| de::Error::missing_field("time"))?,
-                    id: id.ok_or_else(|| de::Error::missing_field("id"))?,
+                    id: id
+                        .map(|cow: String| cow.into())
+                        .ok_or_else(|| de::Error::missing_field("id"))?,
                     pid: pid.ok_or_else(|| de::Error::missing_field("pid"))?,
                     cxt: cxt.ok_or_else(|| de::Error::missing_field("cxt"))?,
                     data: data
@@ -224,7 +226,7 @@ impl<'de> Deserialize<'de> for Data<'_> {
     }
 }
 
-impl Serialize for Header {
+impl<'i> Serialize for Header<'i> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -239,7 +241,7 @@ impl Serialize for Header {
     }
 }
 
-impl<'de> Deserialize<'de> for Header {
+impl<'de> Deserialize<'de> for Header<'_> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
@@ -247,7 +249,7 @@ impl<'de> Deserialize<'de> for Header {
         struct HeaderVisitor;
 
         impl<'de> Visitor<'de> for HeaderVisitor {
-            type Value = Header;
+            type Value = Header<'static>;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
                 formatter.write_str("Expecting a valid 'Header' record")
@@ -288,7 +290,9 @@ impl<'de> Deserialize<'de> for Header {
                         version: version.ok_or_else(|| de::Error::missing_field("version"))?,
                     },
                     time: time.ok_or_else(|| de::Error::missing_field("time"))?,
-                    id: id.ok_or_else(|| de::Error::missing_field("id"))?,
+                    id: id
+                        .map(|cow: String| cow.into())
+                        .ok_or_else(|| de::Error::missing_field("id"))?,
                     pid: pid.ok_or_else(|| de::Error::missing_field("pid"))?,
                     cxt: cxt.ok_or_else(|| de::Error::missing_field("cxt"))?,
                 })
