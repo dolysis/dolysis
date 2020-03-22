@@ -781,6 +781,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde_interface"
+version = "0.4.0"
+source = "git+https://github.com/psox/dolysis.git?branch=interface/borrowed-record#c411396027f4f3e5d9769bfa71fb81ca3c8e18ae"
+dependencies = [
+ "bytes",
+ "futures",
+ "pin-project",
+ "serde",
+ "serde_cbor",
+ "serde_repr",
+ "tokio",
+ "tokio-serde",
+ "tokio-util",
+]
+
+[[package]]
 name = "serde_json"
 version = "1.0.48"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -846,7 +862,7 @@ dependencies = [
  "lazy_static",
  "rayon",
  "serde",
- "serde_interface 0.3.2 (git+https://github.com/psox/dolysis.git?branch=develop)",
+ "serde_interface 0.4.0",
  "serde_repr",
  "thiserror",
  "tokio",

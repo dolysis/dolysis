@@ -17,7 +17,7 @@ chrono = "0.4.10"
 # Serialization
 serde = { version = "1.0.104", features = ["derive", "rc"] }
 serde_repr = "0.1.5"
-serde_interface = { version = "0.3.*", git = "https://github.com/psox/dolysis.git", branch = "develop" }
+serde_interface = { version = "0.4.*", git = "https://github.com/psox/dolysis.git", branch = "interface/borrowed-record" }
 
 # Rayon
 rayon = "1.3.0"
