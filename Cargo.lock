@@ -200,7 +200,7 @@ dependencies = [
  "pin-project",
  "regex",
  "serde",
- "serde_interface 0.3.2 (git+https://github.com/psox/dolysis.git?branch=develop)",
+ "serde_interface 0.3.2",
  "serde_yaml",
  "smallvec",
  "thiserror",
@@ -401,7 +401,7 @@ dependencies = [
  "futures",
  "lazy_static",
  "serde",
- "serde_interface 0.3.2 (git+https://github.com/psox/dolysis.git?branch=develop)",
+ "serde_interface 0.3.2",
  "serde_json",
  "tokio",
  "tracing",
@@ -767,7 +767,7 @@ dependencies = [
 
 [[package]]
 name = "serde_interface"
-version = "0.3.2"
+version = "0.4.0"
 dependencies = [
  "bytes",
  "futures",
@@ -846,7 +846,7 @@ dependencies = [
  "lazy_static",
  "rayon",
  "serde",
- "serde_interface 0.3.2 (git+https://github.com/psox/dolysis.git?branch=develop)",
+ "serde_interface 0.3.2",
  "serde_repr",
  "thiserror",
  "tokio",
