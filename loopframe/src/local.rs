@@ -1,5 +1,5 @@
 use {
-    serde::{ser, Deserialize, Serialize, Serializer},
+    serde::{Deserialize, Serialize},
     serde_interface::{
         Common as RecordCommon, Data as RecordData, DataContext, Error as RecordError,
         Header as RecordHeader, InterfaceError, Log as RecordLog, Record,
@@ -15,7 +15,7 @@ pub(super) enum LocalRecord {
     Error(Error),
 }
 
-impl From<Record> for LocalRecord {
+impl From<Record<'_, '_>> for LocalRecord {
     fn from(record: Record) -> Self {
         match record {
             Record::StreamStart => LocalRecord::StreamStart,
@@ -35,19 +35,18 @@ pub(super) struct Data {
     id: String,
     pid: u32,
     cxt: Context,
-    #[serde(serialize_with = "as_utf8")]
-    data: Vec<u8>,
+    data: String,
 }
 
-impl From<RecordData> for Data {
+impl From<RecordData<'_, '_>> for Data {
     fn from(r: RecordData) -> Self {
         Self {
             required: r.required.into(),
             time: r.time,
-            id: r.id,
+            id: r.id.into(),
             pid: r.pid,
             cxt: r.cxt.into(),
-            data: r.data,
+            data: r.data.into(),
         }
     }
 }
@@ -61,12 +60,12 @@ pub(super) struct Header {
     cxt: Context,
 }
 
-impl From<RecordHeader> for Header {
+impl From<RecordHeader<'_>> for Header {
     fn from(r: RecordHeader) -> Self {
         Self {
             required: r.required.into(),
             time: r.time,
-            id: r.id,
+            id: r.id.into(),
             pid: r.pid,
             cxt: r.cxt.into(),
         }
@@ -131,12 +130,4 @@ impl From<DataContext> for Context {
             DataContext::Stdout => Self::Stdout,
         }
     }
-}
-
-fn as_utf8<S>(item: &[u8], se: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    let valid = std::str::from_utf8(item).map_err(ser::Error::custom)?;
-    se.serialize_str(valid)
 }
