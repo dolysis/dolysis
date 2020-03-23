@@ -206,7 +206,7 @@ dependencies = [
  "pin-project",
  "regex",
  "serde",
- "serde_interface 0.3.2",
+ "serde_interface 0.4.0",
  "serde_yaml",
  "smallvec",
  "thiserror",
@@ -790,6 +790,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde_interface"
+version = "0.4.0"
+source = "git+https://github.com/psox/dolysis.git?branch=interface/borrowed-record#fdcd481885b91bf5b513124ce92cb87cc05e7301"
+dependencies = [
+ "bytes",
+ "futures",
+ "pin-project",
+ "serde",
+ "serde_cbor",
+ "serde_repr",
+ "tokio",
+ "tokio-serde",
+ "tokio-util",
+]
+
+[[package]]
 name = "serde_json"
 version = "1.0.48"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -856,11 +872,7 @@ dependencies = [
  "lazy_static",
  "rayon",
  "serde",
-<<<<<<< HEAD
- "serde_interface 0.3.2",
-=======
  "serde_interface 0.4.0",
->>>>>>> skipframe/experimental-record
  "serde_repr",
  "thiserror",
  "tokio",
@@ -923,18 +935,18 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
-version = "1.0.12"
+version = "1.0.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "268c0f167625b8b0cc90a91787b158a372b4edadb31d6e20479dc787309defad"
+checksum = "e3711fd1c4e75b3eff12ba5c40dba762b6b65c5476e8174c1a664772060c49bf"
 dependencies = [
  "thiserror-impl",
 ]
 
 [[package]]
 name = "thiserror-impl"
-version = "1.0.12"
+version = "1.0.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9a3ecbaa927a1d5a73d14a20af52463fa433c0727d07ef5e208f0546841d2efd"
+checksum = "ae2b85ba4c9aa32dd3343bd80eb8d22e9b54b7688c17ea3907f236885353b233"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -998,8 +1010,8 @@ dependencies = [
 
 [[package]]
 name = "tokio-serde"
-version = "0.6.0"
-source = "git+https://github.com/carllerche/tokio-serde.git#4bdef0423221ba90a92013a10d736489615738b8"
+version = "0.6.1"
+source = "git+https://github.com/carllerche/tokio-serde.git#f3c3d69ce049437973468118c9d01b46e0b1ade5"
 dependencies = [
  "bytes",
  "derivative",

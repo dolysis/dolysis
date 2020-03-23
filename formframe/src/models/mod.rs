@@ -70,7 +70,7 @@ pub trait SpanDisplay {
     }
 }
 
-impl SpanDisplay for Record {
+impl SpanDisplay for Record<'_, '_> {
     fn span_print(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self {
             Record::Header { .. } => "Header",
@@ -146,8 +146,8 @@ enum LocalRecord {
     Data(Data),
 }
 
-impl Into<Record> for LocalRecord {
-    fn into(self) -> Record {
+impl Into<Record<'static, 'static>> for LocalRecord {
+    fn into(self) -> Record<'static, 'static> {
         match self {
             Self::Header(r) => r.into(),
             Self::Data(r) => r.into(),
@@ -155,7 +155,7 @@ impl Into<Record> for LocalRecord {
     }
 }
 
-impl TryFrom<RecordHeader> for LocalRecord {
+impl<'i> TryFrom<RecordHeader<'i>> for LocalRecord {
     type Error = CrateError;
 
     fn try_from(value: RecordHeader) -> Result<Self, Self::Error> {
@@ -163,7 +163,7 @@ impl TryFrom<RecordHeader> for LocalRecord {
     }
 }
 
-impl TryFrom<RecordData> for LocalRecord {
+impl<'i, 'd> TryFrom<RecordData<'i, 'd>> for LocalRecord {
     type Error = CrateError;
 
     fn try_from(value: RecordData) -> Result<Self, Self::Error> {
@@ -180,28 +180,28 @@ struct Header {
     pub cxt: HeaderContext,
 }
 
-impl TryFrom<RecordHeader> for Header {
+impl<'i> TryFrom<RecordHeader<'i>> for Header {
     type Error = CrateError;
 
     fn try_from(value: RecordHeader) -> Result<Self, Self::Error> {
         Ok(Self {
             version: value.required.version,
             time: value.time,
-            id: value.id,
+            id: value.id.into(),
             pid: value.pid,
             cxt: HeaderContext::try_from(value.cxt)?,
         })
     }
 }
 
-impl Into<Record> for Header {
-    fn into(self) -> Record {
+impl Into<Record<'static, 'static>> for Header {
+    fn into(self) -> Record<'static, 'static> {
         Record::Header(RecordHeader {
             required: Common {
                 version: self.version,
             },
             time: self.time,
-            id: self.id,
+            id: self.id.into(),
             pid: self.pid,
             cxt: self.cxt.into(),
         })
@@ -249,32 +249,32 @@ struct Data {
     pub data: String,
 }
 
-impl TryFrom<RecordData> for Data {
+impl<'i, 'd> TryFrom<RecordData<'i, 'd>> for Data {
     type Error = CrateError;
 
     fn try_from(value: RecordData) -> Result<Self, Self::Error> {
         Ok(Self {
             version: value.required.version,
             time: value.time,
-            id: value.id,
+            id: value.id.into(),
             pid: value.pid,
             cxt: DataContext::try_from(value.cxt)?,
-            data: String::from_utf8(value.data)?,
+            data: value.data.into(),
         })
     }
 }
 
-impl Into<Record> for Data {
-    fn into(self) -> Record {
+impl Into<Record<'static, 'static>> for Data {
+    fn into(self) -> Record<'static, 'static> {
         Record::Data(RecordData {
             required: Common {
                 version: self.version,
             },
             time: self.time,
-            id: self.id,
+            id: self.id.into(),
             pid: self.pid,
             cxt: self.cxt.into(),
-            data: self.data.into_bytes(),
+            data: self.data.into(),
         })
     }
 }

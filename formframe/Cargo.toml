@@ -26,4 +26,4 @@ tracing-subscriber = "0.2.*"
 tracing-futures = "0.2.*"
 
 # Local repo
-serde_interface = { version = "0.3.*", git = "https://github.com/psox/dolysis.git", branch = "develop" }
+serde_interface = { version = "0.4.*", git = "https://github.com/psox/dolysis.git", branch = "interface/borrowed-record" }
