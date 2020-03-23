@@ -206,7 +206,7 @@ dependencies = [
  "pin-project",
  "regex",
  "serde",
- "serde_interface 0.4.0",
+ "serde_interface 0.4.0 (git+https://github.com/psox/dolysis.git?branch=interface/borrowed-record)",
  "serde_yaml",
  "smallvec",
  "thiserror",
@@ -728,22 +728,6 @@ dependencies = [
 
 [[package]]
 name = "serde_interface"
-version = "0.3.2"
-source = "git+https://github.com/psox/dolysis.git?branch=develop#64ab5a825ed0896a89278f10522d42a654cb102f"
-dependencies = [
- "bytes",
- "futures",
- "pin-project",
- "serde",
- "serde_cbor",
- "serde_repr",
- "tokio",
- "tokio-serde",
- "tokio-util",
-]
-
-[[package]]
-name = "serde_interface"
 version = "0.4.0"
 source = "git+https://github.com/psox/dolysis.git?branch=interface/borrowed-record#fdcd481885b91bf5b513124ce92cb87cc05e7301"
 dependencies = [
@@ -761,38 +745,6 @@ dependencies = [
 [[package]]
 name = "serde_interface"
 version = "0.4.0"
-dependencies = [
- "bytes",
- "futures",
- "pin-project",
- "serde",
- "serde_cbor",
- "serde_repr",
- "tokio",
- "tokio-serde",
- "tokio-util",
-]
-
-[[package]]
-name = "serde_interface"
-version = "0.4.0"
-source = "git+https://github.com/psox/dolysis.git?branch=interface/borrowed-record#fdcd481885b91bf5b513124ce92cb87cc05e7301"
-dependencies = [
- "bytes",
- "futures",
- "pin-project",
- "serde",
- "serde_cbor",
- "serde_repr",
- "tokio",
- "tokio-serde",
- "tokio-util",
-]
-
-[[package]]
-name = "serde_interface"
-version = "0.4.0"
-source = "git+https://github.com/psox/dolysis.git?branch=interface/borrowed-record#fdcd481885b91bf5b513124ce92cb87cc05e7301"
 dependencies = [
  "bytes",
  "futures",
@@ -872,7 +824,7 @@ dependencies = [
  "lazy_static",
  "rayon",
  "serde",
- "serde_interface 0.4.0",
+ "serde_interface 0.4.0 (git+https://github.com/psox/dolysis.git?branch=interface/borrowed-record)",
  "serde_repr",
  "thiserror",
  "tokio",

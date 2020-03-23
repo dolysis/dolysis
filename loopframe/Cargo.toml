@@ -1,6 +1,6 @@
 [package]
 name = "loopframe"
-version = "0.2.0"
+version = "0.2.1"
 authors = ["pSox <psox@st8l.com>"]
 edition = "2018"
 
@@ -10,7 +10,7 @@ edition = "2018"
 lazy_static = "1.4.0"
 clap = "2.33.0"
 serde_json = "1.0.48"
-serde_interface = { version = "0.4.*", git = "https://github.com/psox/dolysis.git", branch = "interface/borrowed-record" }
+serde_interface = { version = "0.4.*", git = "https://github.com/psox/dolysis.git", branch = "develop" }
 serde = { version = "1.0.104", features = ["derive"] }
 
 # Async
