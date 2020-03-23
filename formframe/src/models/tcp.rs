@@ -260,7 +260,7 @@ async fn handle_output(output_rx: Receiver<LocalRecord>) -> Result<()> {
     stream::once(future::ready(Record::StreamStart))
         .chain(output_rx.map(|local| local.into()))
         .chain(stream::once(future::ready(Record::StreamEnd)))
-        .map(|record| Ok(record))
+        .map(Ok)
         .inspect_ok(|record| debug!("<= {}", record.span_display()))
         // Due to a [compiler bug](https://github.com/rust-lang/rust/issues/64552) as of 2020/03/23 we must box this stream.
         // The bug occurs due to the compiler erasing certain lifetime bounds in a generator (namely 'static ones) leading to the false
