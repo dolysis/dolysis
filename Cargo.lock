@@ -196,7 +196,7 @@ checksum = "2fad85553e09a6f881f739c29f0b00b0f01357c743266d478b68951ce23285f3"
 
 [[package]]
 name = "formframe"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "clap",
  "futures",
@@ -206,7 +206,7 @@ dependencies = [
  "pin-project",
  "regex",
  "serde",
- "serde_interface 0.4.0 (git+https://github.com/psox/dolysis.git?branch=interface/borrowed-record)",
+ "serde_interface 0.4.0",
  "serde_yaml",
  "smallvec",
  "thiserror",
@@ -401,13 +401,13 @@ dependencies = [
 
 [[package]]
 name = "loopframe"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "clap",
  "futures",
  "lazy_static",
  "serde",
- "serde_interface 0.4.0 (git+https://github.com/psox/dolysis.git?branch=interface/borrowed-record)",
+ "serde_interface 0.4.0",
  "serde_json",
  "tokio",
  "tracing",
@@ -729,7 +729,7 @@ dependencies = [
 [[package]]
 name = "serde_interface"
 version = "0.4.0"
-source = "git+https://github.com/psox/dolysis.git?branch=interface/borrowed-record#fdcd481885b91bf5b513124ce92cb87cc05e7301"
+source = "git+https://github.com/psox/dolysis.git?branch=develop#282450e58aaceee95c7aac06da83826a659de37e"
 dependencies = [
  "bytes",
  "futures",
@@ -744,7 +744,7 @@ dependencies = [
 
 [[package]]
 name = "serde_interface"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "bytes",
  "futures",
@@ -812,7 +812,7 @@ dependencies = [
 
 [[package]]
 name = "skipframe"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "arrayvec",
  "bstr",
@@ -824,7 +824,7 @@ dependencies = [
  "lazy_static",
  "rayon",
  "serde",
- "serde_interface 0.4.0 (git+https://github.com/psox/dolysis.git?branch=interface/borrowed-record)",
+ "serde_interface 0.4.0",
  "serde_repr",
  "thiserror",
  "tokio",
