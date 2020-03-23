@@ -1,14 +1,14 @@
 use {
     crate::{
         models::WriteChannel,
-        output::{AsMapSerialize, Directive, Item, OutputContext},
+        output::{DataBuilder, Directive, HeaderBuilder, OutputContext},
         prelude::*,
     },
     bstr::io::BufReadExt,
     chrono::Utc,
     crossbeam_channel::Sender,
     futures::{channel::mpsc::Sender as AsyncSender, executor::block_on, prelude::*},
-    serde_interface::{KindMarker, RecordInterface, RecordKind},
+    serde_interface::{DataContext, RecordInterface},
     std::{
         io,
         path::Path,
@@ -49,13 +49,7 @@ pub fn process_child(
     let mut body = || -> Result<()> {
         let mut sink = RecordInterface::new_sink(tx_write.clone().sink_map_err(CrateError::from));
 
-        block_on(sink.send(RecordKind::new(
-            KindMarker::Header,
-            AsMapSerialize::new(context.stream(&[
-                Item::Tag(Directive::Begin),
-                Item::Time(Utc::now().timestamp_nanos()),
-            ])),
-        )))?;
+        block_on(sink.send(header(context, Directive::Begin).done_unchecked()))?;
         trace!("Sent opening header");
 
         match (handle.stdout.take(), handle.stderr.take()) {
@@ -76,13 +70,7 @@ pub fn process_child(
             (None, None) => (),
         }
 
-        block_on(sink.send(RecordKind::new(
-            KindMarker::Header,
-            AsMapSerialize::new(context.stream(&[
-                Item::Tag(Directive::End),
-                Item::Time(Utc::now().timestamp_nanos()),
-            ])),
-        )))?;
+        block_on(sink.send(header(context, Directive::End).done_unchecked()))?;
         trace!("Sent closing header");
 
         Ok(())
@@ -113,40 +101,56 @@ where
     );
     trace!("Processing child output stream");
 
-    let mut log_t_lines = 0u64;
-    let mut log_t_bytes = 0u64;
+    let mut lines = 0u64;
+    let mut bytes = 0u64;
 
     let buffer = io::BufReader::new(read);
     let mut sink = RecordInterface::new_sink(tx_write.sink_map_err(CrateError::from));
 
     buffer
         .for_byte_line(|line| {
-            block_on(sink.send(RecordKind::new(
-                KindMarker::Data,
-                AsMapSerialize::new(context.stream(&[
-                    Item::Tag(directive),
-                    Item::Time(Utc::now().timestamp_nanos()),
-                    Item::Data(line),
-                ])),
-            )))
-            //Ugly workaround for closure's io::Error requirement,
-            //Round trips from our local error into io::Error and back
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
-            .map(|o| {
-                log_t_lines += 1;
-                log_t_bytes += line.len() as u64;
-                o
-            })
-            .and(Ok(true))
+            let utf8 = String::from_utf8_lossy(line);
+
+            block_on(sink.send(data(context, directive, &utf8).done_unchecked()))
+                //Ugly workaround for closure's io::Error requirement,
+                //Round trips from our local error into io::Error and back
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+                .map(|o| {
+                    lines += 1;
+                    bytes += line.len() as u64;
+                    o
+                })
+                .and(Ok(true))
         })
         .map(|_| {
-            if log_t_bytes > 0 {
-                debug!(
-                    lines = log_t_lines,
-                    bytes = log_t_bytes,
-                    "Finished child stream"
-                )
+            if bytes > 0 {
+                debug!(lines, bytes, "Finished child stream")
             }
         })
         .map_err(|e| e.into())
+}
+
+fn header<T>(cxt: &OutputContext, tag: T) -> HeaderBuilder<'_>
+where
+    T: Into<DataContext>,
+{
+    HeaderBuilder::new(Some(cxt)).map(|this| {
+        this.and(|this| this.time(now())).and(|this| this.tag(tag));
+    })
+}
+
+fn data<'ctx, 'out, T>(cxt: &'ctx OutputContext, tag: T, data: &'out str) -> DataBuilder<'ctx, 'out>
+where
+    T: Into<DataContext>,
+{
+    DataBuilder::new(Some(cxt)).map(|this| {
+        this.and(|this| this.time(now()))
+            .and(|this| this.tag(tag))
+            .and(|this| this.data(data));
+    })
+}
+
+#[inline]
+fn now() -> i64 {
+    Utc::now().timestamp_nanos()
 }

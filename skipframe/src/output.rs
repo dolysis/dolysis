@@ -1,8 +1,7 @@
 use {
     crate::prelude::*,
-    serde::ser::{SerializeMap, Serializer},
     serde::Serialize,
-    serde_interface::{DataContext, Marker, TagMarker},
+    serde_interface::{Common, Data, DataContext, Header, Marker, Record, TagMarker},
     std::{fmt, sync::Arc},
 };
 
@@ -77,52 +76,16 @@ impl OutputContext {
         self.inner.push(Item::Version(version))
     }
 
-    // pub fn as_ref(&self) -> &[Item] {
-    //     &self.inner
+    pub fn items(&self) -> &[Item] {
+        &self.inner
+    }
+
+    // pub fn stream<'a, 'b: 'a>(
+    //     &'b self,
+    //     header: &'a [Item<'b>],
+    // ) -> impl Iterator<Item = &'a Item<'b>> {
+    //     header.iter().chain(self.inner.iter())
     // }
-
-    pub fn stream<'a, 'b: 'a>(
-        &'b self,
-        header: &'a [Item<'b>],
-    ) -> impl Iterator<Item = &'a Item<'b>> {
-        header.iter().chain(self.inner.iter())
-    }
-}
-
-/// Serializes the collected output as a k:v map
-pub struct AsMapSerialize<I> {
-    // Need RefCell due to the serialize receiver
-    // taking an immutable ref
-    inner: std::cell::RefCell<I>,
-}
-
-impl<'out, I> AsMapSerialize<I>
-where
-    I: Iterator<Item = &'out Item<'out>>,
-{
-    pub fn new(iter: I) -> Self {
-        Self {
-            inner: std::cell::RefCell::new(iter),
-        }
-    }
-}
-
-impl<'out, I> Serialize for AsMapSerialize<I>
-where
-    I: Iterator<Item = &'out Item<'out>>,
-{
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let mut map = serializer.serialize_map(None)?;
-        let mut iter = self.inner.borrow_mut();
-        // ref deref required circa rust 1.41.1, the compiler will not infer it
-        for item in &mut *iter {
-            map.serialize_entry(&item.as_marker(), &item)?;
-        }
-        map.end()
-    }
 }
 
 /// Local representation of any possible valid output.
@@ -152,5 +115,208 @@ impl Marker for Item<'_> {
             Self::Pid(_) => TagMarker::Pid,
             Self::Data(_) => TagMarker::Data,
         }
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct HeaderBuilder<'ctx> {
+    version: Option<u32>,
+    tag: Option<DataContext>,
+    time: Option<i64>,
+    id: Option<&'ctx str>,
+    pid: Option<u32>,
+}
+
+impl<'ctx> HeaderBuilder<'ctx> {
+    pub fn new(cxt: Option<&'ctx OutputContext>) -> Self {
+        cxt.map_or_else(|| Self::default(), |cxt| cxt.into())
+    }
+
+    pub fn is_done(&self) -> bool {
+        self.version.is_some()
+            && self.tag.is_some()
+            && self.time.is_some()
+            && self.id.is_some()
+            && self.pid.is_some()
+    }
+
+    pub fn map<F>(mut self, f: F) -> Self
+    where
+        F: FnOnce(&mut Self),
+    {
+        f(&mut self);
+        self
+    }
+
+    pub fn and<F>(&mut self, f: F) -> &mut Self
+    where
+        F: FnOnce(&mut Self),
+    {
+        f(self);
+        self
+    }
+
+    pub fn tag<T>(&mut self, tag: T)
+    where
+        T: Into<DataContext>,
+    {
+        self.tag.replace(tag.into());
+    }
+
+    pub fn time(&mut self, time: i64) {
+        self.time.replace(time);
+    }
+
+    pub fn done_unchecked(self) -> Record<'ctx, 'static> {
+        if !self.is_done() {
+            panic!("Attempted to convert an incomplete HeaderBuilder to a Record")
+        } else {
+            let header = Header {
+                required: Common::new(self.version.unwrap()),
+                time: self.time.unwrap(),
+                id: self.id.map(|id| id.into()).unwrap(),
+                pid: self.pid.unwrap(),
+                cxt: self.tag.unwrap(),
+            };
+
+            Record::Header(header)
+        }
+    }
+}
+
+impl<'ctx> From<&'ctx OutputContext> for HeaderBuilder<'ctx> {
+    fn from(base: &'ctx OutputContext) -> Self {
+        base.items()
+            .iter()
+            .fold(Self::default(), |mut state, item| match item {
+                Item::Version(i) => {
+                    state.version.replace(*i);
+                    state
+                }
+                Item::Tag(i) => {
+                    state.tag.replace((*i).into());
+                    state
+                }
+                Item::Time(i) => {
+                    state.time.replace(*i);
+                    state
+                }
+                Item::Id(i) => {
+                    state.id.replace(i);
+                    state
+                }
+                Item::Pid(i) => {
+                    state.pid.replace(*i);
+                    state
+                }
+                Item::Data(_) => {
+                    unreachable!("Not possible for OutputContext to hold non static refs")
+                }
+            })
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct DataBuilder<'ctx, 'out> {
+    version: Option<u32>,
+    tag: Option<DataContext>,
+    time: Option<i64>,
+    id: Option<&'ctx str>,
+    pid: Option<u32>,
+    data: Option<&'out str>,
+}
+
+impl<'ctx, 'out> DataBuilder<'ctx, 'out> {
+    pub fn new(cxt: Option<&'ctx OutputContext>) -> Self {
+        cxt.map_or_else(|| Self::default(), |cxt| cxt.into())
+    }
+
+    pub fn map<F>(mut self, f: F) -> Self
+    where
+        F: FnOnce(&mut Self),
+    {
+        f(&mut self);
+        self
+    }
+
+    pub fn and<F>(&mut self, f: F) -> &mut Self
+    where
+        F: FnOnce(&mut Self),
+    {
+        f(self);
+        self
+    }
+
+    pub fn tag<T>(&mut self, tag: T)
+    where
+        T: Into<DataContext>,
+    {
+        self.tag.replace(tag.into());
+    }
+
+    pub fn time(&mut self, time: i64) {
+        self.time.replace(time);
+    }
+
+    pub fn data(&mut self, data: &'out str) {
+        self.data.replace(data);
+    }
+
+    pub fn is_done(&self) -> bool {
+        self.version.is_some()
+            && self.tag.is_some()
+            && self.time.is_some()
+            && self.id.is_some()
+            && self.pid.is_some()
+            && self.data.is_some()
+    }
+
+    pub fn done_unchecked(self) -> Record<'ctx, 'out> {
+        if !self.is_done() {
+            panic!("Attempted to convert an incomplete DataBuilder to a Record")
+        } else {
+            let data = Data {
+                required: Common::new(self.version.unwrap()),
+                time: self.time.unwrap(),
+                id: self.id.map(|id| id.into()).unwrap(),
+                pid: self.pid.unwrap(),
+                cxt: self.tag.unwrap(),
+                data: self.data.map(|d| d.into()).unwrap(),
+            };
+
+            Record::Data(data)
+        }
+    }
+}
+
+impl<'ctx> From<&'ctx OutputContext> for DataBuilder<'ctx, '_> {
+    fn from(base: &'ctx OutputContext) -> Self {
+        base.items()
+            .iter()
+            .fold(Self::default(), |mut state, item| match item {
+                Item::Version(i) => {
+                    state.version.replace(*i);
+                    state
+                }
+                Item::Tag(i) => {
+                    state.tag.replace((*i).into());
+                    state
+                }
+                Item::Time(i) => {
+                    state.time.replace(*i);
+                    state
+                }
+                Item::Id(i) => {
+                    state.id.replace(i.as_ref());
+                    state
+                }
+                Item::Pid(i) => {
+                    state.pid.replace(*i);
+                    state
+                }
+                Item::Data(_) => {
+                    unreachable!("Not possible for OutputContext to hold non static refs")
+                }
+            })
     }
 }
