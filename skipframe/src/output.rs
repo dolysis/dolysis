@@ -5,10 +5,10 @@ use {
     std::{fmt, sync::Arc},
 };
 
-/// Contextual information for interpreting associated data
+/// Local representation of DataContext
 #[derive(Debug, Clone, Copy)]
 pub enum Directive {
-    Begin,
+    Start,
     Stdout,
     Stderr,
     End,
@@ -17,7 +17,7 @@ pub enum Directive {
 impl Into<DataContext> for Directive {
     fn into(self) -> DataContext {
         match self {
-            Self::Begin => DataContext::Start,
+            Self::Start => DataContext::Start,
             Self::Stdout => DataContext::Stdout,
             Self::Stderr => DataContext::Stderr,
             Self::End => DataContext::End,
@@ -28,7 +28,7 @@ impl Into<DataContext> for Directive {
 impl std::fmt::Display for Directive {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let x = match self {
-            Self::Begin => "BEGIN",
+            Self::Start => "BEGIN",
             Self::Stdout => "STDOUT",
             Self::Stderr => "STDERR",
             Self::End => "END",
@@ -41,7 +41,7 @@ impl std::fmt::Display for Directive {
 impl SpanDisplay for Directive {
     fn span_print(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let x = match self {
-            Self::Begin => "Begin",
+            Self::Start => "Start",
             Self::Stdout => "Stdout",
             Self::Stderr => "Stderr",
             Self::End => "End",
@@ -79,7 +79,7 @@ impl OutputContext {
     }
 }
 
-/// Local representation of any possible valid output.
+/// Local representation of context that is gathered early.
 // Currently using an enum due to the low number of variants.
 // If this enum gets larger than ~24 variants, should consider
 // moving to a trait based implementation

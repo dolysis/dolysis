@@ -49,7 +49,7 @@ pub fn process_child(
     let mut body = || -> Result<()> {
         let mut sink = RecordInterface::new_sink(tx_write.clone().sink_map_err(CrateError::from));
 
-        block_on(sink.send(header(context, Directive::Begin).done_unchecked()))?;
+        block_on(sink.send(header(context, Directive::Start).done_unchecked()))?;
         trace!("Sent opening header");
 
         match (handle.stdout.take(), handle.stderr.take()) {
