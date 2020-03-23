@@ -1,6 +1,6 @@
 [package]
 name = "serde_interface"
-version = "0.3.2"
+version = "0.4.0"
 authors = ["pSox <psox@st8l.com>"]
 edition = "2018"
 
