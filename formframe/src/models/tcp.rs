@@ -54,7 +54,8 @@ pub async fn listener(addr: &str) -> Result<()> {
                             let (tx_out, rx_out) = channel::<LocalRecord>(256);
                             let input = handle_connection(socket)
                                 .then(|stream| split_and_join(stream, tx_out))
-                                .instrument(always_span!("con.input"));
+                                .instrument(always_span!("con.input"))
+                                .map(|_| ());
                             let output =
                                 handle_output(rx_out).instrument(always_span!("con.output"));
 
@@ -238,7 +239,7 @@ where
 }
 
 async fn handle_output(output_rx: Receiver<LocalRecord>) -> Result<()> {
-    let out_stream: Box<dyn tokio::io::AsyncWrite + Unpin + Send> = match cli!()
+    let out_stream: Box<dyn tokio::io::AsyncWrite + Unpin + Send + 'static> = match cli!()
         .get_exec_list()
         .get_loads()
         .and_then(|mut iter| iter.next())
@@ -248,14 +249,24 @@ async fn handle_output(output_rx: Receiver<LocalRecord>) -> Result<()> {
             .inspect_err(|e| error!("Could not connect to output: {}", e))
             .await
             .ok()
-            .map(|tcp| Box::new(tcp) as Box<dyn tokio::io::AsyncWrite + Unpin + Send>),
-        None => Some(Box::new(tokio::io::sink()) as Box<dyn tokio::io::AsyncWrite + Unpin + Send>),
+            .map(|tcp| Box::new(tcp) as Box<dyn tokio::io::AsyncWrite + Unpin + Send + 'static>),
+        None => {
+            Some(Box::new(tokio::io::sink())
+                as Box<dyn tokio::io::AsyncWrite + Unpin + Send + 'static>)
+        }
     }
     .unwrap_or_else(|| Box::new(tokio::io::sink()));
-    stream::once(async { Ok(Record::StreamStart) })
-        .chain(output_rx.map(|local| -> Result<Record> { Ok(local.into()) }))
-        .chain(stream::once(async { Ok(Record::StreamEnd) }))
+
+    stream::once(future::ready(Record::StreamStart))
+        .chain(output_rx.map(|local| local.into()))
+        .chain(stream::once(future::ready(Record::StreamEnd)))
+        .map(Ok)
         .inspect_ok(|record| debug!("<= {}", record.span_display()))
+        // Due to a [compiler bug](https://github.com/rust-lang/rust/issues/64552) as of 2020/03/23 we must box this stream.
+        // The bug occurs due to the compiler erasing certain lifetime bounds in a generator (namely 'static ones) leading to the false
+        // assumption that lifetime 'a: 'static and 'b: 'static do not live as long as each other. This leads to inscrutable error messages.
+        // TODO: Once said issue is resolved remove this allocation.
+        .boxed()
         .forward(RecordInterface::from_write(out_stream).sink_err_into())
         .await
 }

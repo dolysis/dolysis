@@ -1,6 +1,6 @@
 [package]
 name = "formframe"
-version = "0.2.1"
+version = "0.2.2"
 authors = ["pSox <psox@st8l.com>"]
 edition = "2018"
 
@@ -26,4 +26,4 @@ tracing-subscriber = "0.2.*"
 tracing-futures = "0.2.*"
 
 # Local repo
-serde_interface = { version = "0.3.*", git = "https://github.com/psox/dolysis.git", branch = "develop" }
+serde_interface = { version = "0.4.*", git = "https://github.com/psox/dolysis.git", branch = "develop" }
