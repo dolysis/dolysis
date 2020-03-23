@@ -401,7 +401,7 @@ dependencies = [
  "futures",
  "lazy_static",
  "serde",
- "serde_interface 0.3.2 (git+https://github.com/psox/dolysis.git?branch=develop)",
+ "serde_interface 0.4.0",
  "serde_json",
  "tokio",
  "tracing",
@@ -768,6 +768,22 @@ dependencies = [
 [[package]]
 name = "serde_interface"
 version = "0.3.2"
+dependencies = [
+ "bytes",
+ "futures",
+ "pin-project",
+ "serde",
+ "serde_cbor",
+ "serde_repr",
+ "tokio",
+ "tokio-serde",
+ "tokio-util",
+]
+
+[[package]]
+name = "serde_interface"
+version = "0.4.0"
+source = "git+https://github.com/psox/dolysis.git?branch=interface/borrowed-record#fdcd481885b91bf5b513124ce92cb87cc05e7301"
 dependencies = [
  "bytes",
  "futures",
