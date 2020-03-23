@@ -1,13 +1,12 @@
 use {
     crate::prelude::*,
-    serde::Serialize,
-    serde_interface::{Common, Data, DataContext, Header, Marker, Record, TagMarker},
+    arrayvec::ArrayVec,
+    serde_interface::{Common, Data, DataContext, Header, Record},
     std::{fmt, sync::Arc},
 };
 
 /// Contextual information for interpreting associated data
-#[derive(Debug, Clone, Copy, Serialize)]
-#[serde(into = "DataContext")]
+#[derive(Debug, Clone, Copy)]
 pub enum Directive {
     Begin,
     Stdout,
@@ -53,69 +52,42 @@ impl SpanDisplay for Directive {
 }
 
 /// Container for various relevant data that should be passed to the parser
+#[derive(Debug, Default)]
 pub struct OutputContext {
-    // Note the 'static prevents adding non-owned variants
-    // TODO: Replace Vec with ArrayVec (https://docs.rs/arrayvec/0.5.1/arrayvec/index.html)
-    inner: Vec<Item<'static>>,
+    inner: ArrayVec<[CxtItem; 3]>,
 }
 
 impl OutputContext {
     pub fn new() -> Self {
-        Self { inner: Vec::new() }
+        Self::default()
     }
 
     pub fn insert_id(&mut self, id: &str) {
-        self.inner.push(Item::Id(Arc::from(id)))
+        self.inner.push(CxtItem::Id(Arc::from(id)))
     }
 
     pub fn insert_pid(&mut self, pid: u32) {
-        self.inner.push(Item::Pid(pid))
+        self.inner.push(CxtItem::Pid(pid))
     }
 
     pub fn insert_version(&mut self, version: u32) {
-        self.inner.push(Item::Version(version))
+        self.inner.push(CxtItem::Version(version))
     }
 
-    pub fn items(&self) -> &[Item] {
+    fn items(&self) -> &[CxtItem] {
         &self.inner
     }
-
-    // pub fn stream<'a, 'b: 'a>(
-    //     &'b self,
-    //     header: &'a [Item<'b>],
-    // ) -> impl Iterator<Item = &'a Item<'b>> {
-    //     header.iter().chain(self.inner.iter())
-    // }
 }
 
 /// Local representation of any possible valid output.
 // Currently using an enum due to the low number of variants.
 // If this enum gets larger than ~24 variants, should consider
 // moving to a trait based implementation
-#[derive(Debug, Clone, Serialize)]
-#[serde(untagged)]
-pub enum Item<'out> {
+#[derive(Debug, Clone)]
+enum CxtItem {
     Version(u32),
-    Tag(Directive),
-    Time(i64),
     Id(Arc<str>),
     Pid(u32),
-    Data(&'out [u8]),
-}
-
-impl Marker for Item<'_> {
-    type Marker = TagMarker;
-
-    fn as_marker(&self) -> Self::Marker {
-        match self {
-            Self::Version(_) => TagMarker::Version,
-            Self::Tag(_) => TagMarker::DataContext,
-            Self::Time(_) => TagMarker::Time,
-            Self::Id(_) => TagMarker::Id,
-            Self::Pid(_) => TagMarker::Pid,
-            Self::Data(_) => TagMarker::Data,
-        }
-    }
 }
 
 #[derive(Debug, Default)]
@@ -129,7 +101,7 @@ pub struct HeaderBuilder<'ctx> {
 
 impl<'ctx> HeaderBuilder<'ctx> {
     pub fn new(cxt: Option<&'ctx OutputContext>) -> Self {
-        cxt.map_or_else(|| Self::default(), |cxt| cxt.into())
+        cxt.map_or_else(Self::default, |cxt| cxt.into())
     }
 
     pub fn is_done(&self) -> bool {
@@ -189,28 +161,17 @@ impl<'ctx> From<&'ctx OutputContext> for HeaderBuilder<'ctx> {
         base.items()
             .iter()
             .fold(Self::default(), |mut state, item| match item {
-                Item::Version(i) => {
+                CxtItem::Version(i) => {
                     state.version.replace(*i);
                     state
                 }
-                Item::Tag(i) => {
-                    state.tag.replace((*i).into());
-                    state
-                }
-                Item::Time(i) => {
-                    state.time.replace(*i);
-                    state
-                }
-                Item::Id(i) => {
+                CxtItem::Id(i) => {
                     state.id.replace(i);
                     state
                 }
-                Item::Pid(i) => {
+                CxtItem::Pid(i) => {
                     state.pid.replace(*i);
                     state
-                }
-                Item::Data(_) => {
-                    unreachable!("Not possible for OutputContext to hold non static refs")
                 }
             })
     }
@@ -228,7 +189,7 @@ pub struct DataBuilder<'ctx, 'out> {
 
 impl<'ctx, 'out> DataBuilder<'ctx, 'out> {
     pub fn new(cxt: Option<&'ctx OutputContext>) -> Self {
-        cxt.map_or_else(|| Self::default(), |cxt| cxt.into())
+        cxt.map_or_else(Self::default, |cxt| cxt.into())
     }
 
     pub fn map<F>(mut self, f: F) -> Self
@@ -294,28 +255,17 @@ impl<'ctx> From<&'ctx OutputContext> for DataBuilder<'ctx, '_> {
         base.items()
             .iter()
             .fold(Self::default(), |mut state, item| match item {
-                Item::Version(i) => {
+                CxtItem::Version(i) => {
                     state.version.replace(*i);
                     state
                 }
-                Item::Tag(i) => {
-                    state.tag.replace((*i).into());
-                    state
-                }
-                Item::Time(i) => {
-                    state.time.replace(*i);
-                    state
-                }
-                Item::Id(i) => {
+                CxtItem::Id(i) => {
                     state.id.replace(i.as_ref());
                     state
                 }
-                Item::Pid(i) => {
+                CxtItem::Pid(i) => {
                     state.pid.replace(*i);
                     state
-                }
-                Item::Data(_) => {
-                    unreachable!("Not possible for OutputContext to hold non static refs")
                 }
             })
     }
