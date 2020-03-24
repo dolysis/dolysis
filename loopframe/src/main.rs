@@ -3,7 +3,7 @@
 use {
     crate::{
         cli::{generate_cli, ProgramArgs},
-        models::{init_logging, process_single_stream},
+        models::{init_logging, process_incoming},
         prelude::*,
     },
     lazy_static::lazy_static,
@@ -49,7 +49,5 @@ fn main() {
 
 #[tokio::main]
 async fn tokio_main() -> Result<(), std::io::Error> {
-    process_single_stream()
-        .instrument(always_span!("tokio"))
-        .await
+    process_incoming().instrument(always_span!("tokio")).await
 }

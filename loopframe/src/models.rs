@@ -8,7 +8,7 @@ use {
     tracing_subscriber::{EnvFilter, FmtSubscriber},
 };
 
-pub async fn process_single_stream() -> Result<(), io::Error> {
+pub async fn process_incoming() -> Result<(), io::Error> {
     match (ARGS.con_socket(), ARGS.con_tcp()) {
         (Some(socket), _) => {
             if cfg!(target_family = "unix") {
@@ -34,7 +34,7 @@ pub async fn process_single_stream() -> Result<(), io::Error> {
 async fn use_unixsocket(socket: &Path) -> Result<(), io::Error> {
     use tokio::net::UnixListener;
     debug!("Attempting to bind {}...", socket.display());
-    UnixListener::bind(socket)
+    let mut listener = UnixListener::bind(socket)
         .map(|l| {
             info!("Bind successful, server is waiting on connections");
             l
@@ -42,30 +42,48 @@ async fn use_unixsocket(socket: &Path) -> Result<(), io::Error> {
         .map_err(|e| {
             error!("Binding {} failed... bailing", socket.display());
             e
-        })?
-        .accept()
-        .inspect_ok(|(_, client)| {
-            client
-                .as_pathname()
-                .map(|p| info!("Accepted connection from: {}", p.display()))
-                .unwrap_or_else(|| info!("Accepted connection from: unnamed"))
-        })
-        .and_then(|(socket, _)| handle_connection(socket).map(|_| Ok(())))
-        .await
+        })?;
+
+    loop {
+        listener
+            .accept()
+            .map_ok_or_else(
+                |e| warn!("Failed to accept connection: {}", e),
+                |(socket, client)| {
+                    client
+                        .as_pathname()
+                        .map(|p| info!("Accepted connection from: {}", p.display()))
+                        .unwrap_or_else(|| info!("Accepted connection from: unnamed"));
+
+                    tokio::spawn(handle_connection(socket));
+                },
+            )
+            .await
+    }
 }
 
 async fn use_tcp(addr: SocketAddr) -> Result<(), io::Error> {
     debug!("Attempting to bind {}...", addr);
-    TcpListener::bind(addr)
+    let mut listener = TcpListener::bind(addr)
         .inspect(|status| match status {
             Ok(_) => info!("Bind successful, server is waiting on connections"),
             Err(_) => error!("Binding {} failed... bailing", addr),
         })
-        .await?
-        .accept()
-        .inspect_ok(|(_, client)| info!("Accepted connection from: {}", client))
-        .and_then(|(socket, _)| handle_connection(socket).map(|_| Ok(())))
-        .await
+        .await?;
+
+    loop {
+        listener
+            .accept()
+            .map_ok_or_else(
+                |e| warn!("Failed to accept connection: {}", e),
+                |(socket, client)| {
+                    info!("Accepted connection from: {}", client);
+
+                    tokio::spawn(handle_connection(socket));
+                },
+            )
+            .await
+    }
 }
 
 async fn handle_connection<T>(read: T)
