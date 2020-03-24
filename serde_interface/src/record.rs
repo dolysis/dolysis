@@ -1,8 +1,7 @@
 use {
     crate::{
         error::CrateError,
-        markers::{DataContext, KindMarker, TagMarker},
-        traits::Marker,
+        markers::{DataContext, TagMarker},
     },
     serde::{
         de::{self, Deserializer, IgnoredAny, MapAccess, Visitor},
@@ -48,47 +47,6 @@ impl<'i, 'd> Record<'i, 'd> {
             required: Common::new(version),
             error: err.into(),
         })
-    }
-}
-
-/// A hacky trapdoor for creating a Record. It is the users responsibility
-/// to ensure that the 'Record' is a valid Record kind (i.e: a `Header` or `Data`)
-// TODO: This really should be removed, it is a workaround for serializing non-owned data,
-// i.e a &[u8] instead of a Vec<u8>. Realistically, to solve this problem we would need to
-// create some sort of intermediary structure that both an Owned and Borrowed Record
-// would de/serialize as.
-#[derive(Debug, Serialize)]
-#[serde(tag = "t", content = "c")]
-pub enum RecordKind<R> {
-    #[serde(rename = "ss")]
-    StreamStart,
-    #[serde(rename = "se")]
-    StreamEnd,
-    #[serde(rename = "h")]
-    Header(R),
-    #[serde(rename = "d")]
-    Data(R),
-    #[serde(rename = "l")]
-    Log(R),
-    #[serde(rename = "e")]
-    Error(R),
-}
-
-impl<R> RecordKind<R> {
-    /// Create a new RecordKind. It is the user's responsibility to ensure that the given `R` is a valid
-    /// record.
-    pub fn new<M>(mkr: M, record: R) -> Self
-    where
-        M: Marker<Marker = KindMarker>,
-    {
-        match mkr.as_marker() {
-            KindMarker::StreamStart => Self::StreamStart,
-            KindMarker::StreamEnd => Self::StreamEnd,
-            KindMarker::Header => Self::Header(record),
-            KindMarker::Data => Self::Data(record),
-            KindMarker::Error => Self::Error(record),
-            KindMarker::Log => Self::Log(record),
-        }
     }
 }
 
