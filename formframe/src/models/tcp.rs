@@ -89,7 +89,6 @@ where
             }),
         })
         .first_last()
-        .inspect(|(first, last, _)| debug!(first, last))
         .take_while(|(first, last, record)| future::ready(match record {
             Record::StreamStart if !first => {
                 error!("Malformed stream, client sent: 'Stream Start' out of sequence... terminating connection");
