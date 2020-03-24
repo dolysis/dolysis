@@ -89,6 +89,7 @@ where
             }),
         })
         .first_last()
+        .inspect(|(first, last, _)| debug!(first, last))
         .take_while(|(first, last, record)| future::ready(match record {
             Record::StreamStart if !first => {
                 error!("Malformed stream, client sent: 'Stream Start' out of sequence... terminating connection");
@@ -283,6 +284,7 @@ where
         FirstLast {
             first: OnceCell::new(),
             inner: self.peekable(),
+            item: None,
         }
     }
 }
@@ -296,9 +298,10 @@ pub struct FirstLast<St>
 where
     St: Stream,
 {
-    first: OnceCell<()>,
     #[pin]
     inner: Peekable<St>,
+    first: OnceCell<()>,
+    item: Option<St::Item>,
 }
 
 impl<St> Stream for FirstLast<St>
@@ -307,14 +310,34 @@ where
 {
     type Item = (bool, bool, St::Item);
 
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let last = ready!(self.as_mut().project().inner.poll_peek(cx)).is_none();
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let mut this = self;
 
-        match ready!(self.as_mut().project().inner.poll_next(cx)) {
-            Some(item) => {
-                let first = self.first.set(()).is_ok();
-                Poll::Ready(Some((first, last, item)))
+        // If we have an item already, don't poll_next, just see if poll_peek is ready
+        if this.item.is_some() {
+            match ready!(this.as_mut().project().inner.poll_peek(cx)).is_none() {
+                last => {
+                    let item = this.as_mut().project().item.take().unwrap();
+                    let first = this.first.set(()).is_ok();
+                    return Poll::Ready(Some((first, last, item)));
+                }
             }
+        }
+
+        // Else get the next item in the stream
+        match ready!(this.as_mut().project().inner.poll_next(cx)) {
+            Some(item) => match this.as_mut().project().inner.poll_peek(cx) {
+                Poll::Pending => {
+                    // If the peek isn't ready, place the current item into local storage
+                    *this.as_mut().project().item = Some(item);
+                    return Poll::Pending;
+                }
+                Poll::Ready(peek) => {
+                    let last = peek.is_none();
+                    let first = this.first.set(()).is_ok();
+                    Poll::Ready(Some((first, last, item)))
+                }
+            },
             None => Poll::Ready(None),
         }
     }
@@ -331,6 +354,7 @@ where
     fn join_records(self, handle: JoinSetHandle<'_>) -> Join<Self> {
         Join {
             inner: self,
+            overflow: None,
             ongoing: None,
             handle,
         }
@@ -344,6 +368,7 @@ where
 {
     #[pin]
     inner: St,
+    overflow: Option<Data>,
     ongoing: Option<Data>,
     handle: JoinSetHandle<'j>,
 }
@@ -356,6 +381,17 @@ where
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let mut this = self;
+
+        // If the last call had overflow data, return it before polling for the next item
+        if this.overflow.is_some() {
+            return Poll::Ready(
+                this.as_mut()
+                    .project()
+                    .overflow
+                    .take()
+                    .map(LocalRecord::Data),
+            );
+        }
 
         loop {
             match ready!(this.as_mut().project().inner.poll_next(cx)) {
@@ -377,13 +413,13 @@ where
                             // No ongoing join & current record is not a join
                             (false, false) => return Poll::Ready(Some(LocalRecord::Data(data))),
                             // No ongoing join, but the current record IS a join... set it as the ongoing join
-                            (false, true) => {
-                                this.as_mut().project().ongoing.replace(data);
-                            }
+                            (false, true) => *this.as_mut().project().ongoing = Some(data),
                             // Ongoing join, which has now finished because the current record IS NOT a join
                             (true, false) => {
-                                let data = this.project().ongoing.take().map(LocalRecord::Data);
-                                return Poll::Ready(data);
+                                // Put the overflow item in local storage
+                                *this.as_mut().project().overflow = Some(data);
+                                let join = this.project().ongoing.take().map(LocalRecord::Data);
+                                return Poll::Ready(join);
                             }
                             // Ongoing join, which will continue as the current record is a join
                             (true, true) => {
