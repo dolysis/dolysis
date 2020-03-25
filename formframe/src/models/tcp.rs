@@ -330,7 +330,7 @@ where
                 Poll::Pending => {
                     // If the peek isn't ready, place the current item into local storage
                     *this.as_mut().project().item = Some(item);
-                    return Poll::Pending;
+                    Poll::Pending
                 }
                 Poll::Ready(peek) => {
                     let last = peek.is_none();
