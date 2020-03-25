@@ -15,7 +15,7 @@ use {
     },
     once_cell::sync::OnceCell,
     pin_project::pin_project,
-    serde_interface::{Record, RecordInterface},
+    serde_interface::{Record, RecordInterface, SymmetricalCbor},
     std::collections::HashMap,
     std::{convert::TryFrom, pin::Pin},
     tokio::{
