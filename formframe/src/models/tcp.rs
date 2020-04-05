@@ -8,6 +8,7 @@ use {
         prelude::{CrateResult as Result, *},
     },
     futures::{
+        pin_mut,
         prelude::*,
         ready,
         stream::{Peekable, Stream},
@@ -15,15 +16,19 @@ use {
     },
     once_cell::sync::OnceCell,
     pin_project::pin_project,
-    serde_interface::{Record, RecordInterface},
-    std::collections::HashMap,
+    serde_interface::{Record, RecordFrame, RecordInterface, SymmetricalCbor},
+    std::{collections::HashMap, iter::FromIterator},
     std::{convert::TryFrom, pin::Pin},
     tokio::{
         net::{TcpListener, TcpStream},
-        sync::mpsc::{channel, Receiver, Sender},
+        sync::{
+            broadcast,
+            mpsc::{channel, Receiver, Sender},
+        },
         task::JoinHandle,
         time::Duration,
     },
+    tokio_serde::Serializer,
 };
 
 pub async fn listener(addr: &str) -> Result<()> {
@@ -240,36 +245,87 @@ where
 }
 
 async fn handle_output(output_rx: Receiver<LocalRecord>) -> Result<()> {
-    let out_stream: Box<dyn tokio::io::AsyncWrite + Unpin + Send + 'static> = match cli!()
+    let loaders = cli!()
         .get_exec_list()
-        .get_loads()
-        .and_then(|mut iter| iter.next())
-        .map(|load| TcpStream::connect(load.0))
-    {
-        Some(tcp) => tcp
-            .inspect_err(|e| error!("Could not connect to output: {}", e))
-            .await
-            .ok()
-            .map(|tcp| Box::new(tcp) as Box<dyn tokio::io::AsyncWrite + Unpin + Send + 'static>),
+        .get_loaders()
+        .map(|iter| {
+            iter.fold(broadcast::channel(256), |(tx, rx), load| {
+                tokio::spawn(
+                    spawn_loader(load.0, rx).instrument(always_span!("loader", addr = load.0)),
+                );
+
+                let new_rx = tx.subscribe();
+                (tx, new_rx)
+            })
+        })
+        .map(|(tx, _)| tx);
+
+    match loaders {
+        Some(tx) => {
+            pin_mut!(tx);
+            stream::once(future::ready(Record::StreamStart))
+                .chain(output_rx.map(|local| local.into()))
+                .chain(stream::once(future::ready(Record::StreamEnd)))
+                .map(|record| {
+                    let mkr = SymmetricalCbor::<Record>::default();
+                    pin_mut!(mkr);
+                    Serializer::serialize(mkr, &record).map_err(CrateError::from)
+                })
+                // Due to a [compiler bug](https://github.com/rust-lang/rust/issues/64552) as of 2020/03/23 we must box this stream.
+                // The bug occurs due to the compiler erasing certain lifetime bounds in a generator (namely 'static ones) leading to the false
+                // assumption that lifetime 'a: 'static and 'b: 'static do not live as long as each other. This leads to inscrutable error messages.
+                // TODO: Once said issue is resolved remove this allocation.
+                .boxed()
+                .try_for_each(|serialized_record| {
+                    future::ready(tx.send(serialized_record)).map(|_| Ok(()))
+                })
+                .await
+        }
         None => {
-            Some(Box::new(tokio::io::sink())
-                as Box<dyn tokio::io::AsyncWrite + Unpin + Send + 'static>)
+            output_rx
+                .map(|record| -> Record { record.into() })
+                .map(Ok)
+                // See the Some() branch's comment for an explanation
+                .boxed()
+                .forward(RecordInterface::from_write(tokio::io::sink()))
+                .await?;
+
+            Ok(())
         }
     }
-    .unwrap_or_else(|| Box::new(tokio::io::sink()));
+}
 
-    stream::once(future::ready(Record::StreamStart))
-        .chain(output_rx.map(|local| local.into()))
-        .chain(stream::once(future::ready(Record::StreamEnd)))
+async fn spawn_loader<T>(addr: &'static str, output_rx: broadcast::Receiver<T>) -> Result<()>
+where
+    T: Clone + IntoIterator<Item = u8>,
+{
+    let socket = TcpStream::connect(addr).await?;
+    let sink = RecordFrame::write(socket);
+    output_rx
+        .take_while(|res| match res {
+            Err(e) if *e == broadcast::RecvError::Closed => future::ready(false),
+            _ => future::ready(true),
+        })
+        .filter_map(|res| async {
+            match res {
+                Ok(item) => Some(item),
+                Err(broadcast::RecvError::Lagged(missed)) => {
+                    warn!("Loader is slow, {} records skipped...", missed);
+                    None
+                }
+                _ => None,
+            }
+        })
+        // Note this into_iter / from_iter BS works around dependencies (tokio_serde + tokio_util) not reexporting the version of
+        // [bytes](https://docs.rs/bytes/) they use, leading to version mismatch errors on dependency updates. This "fix" likely has a runtime cost,
+        // but its advantage is that dep updates don't randomly break code.
+        // TODO: raise issues on the deps to properly reexport their public types
+        .map(|item| FromIterator::from_iter(item.into_iter()))
         .map(Ok)
-        .inspect_ok(|record| debug!("<= {}", record.span_display()))
-        // Due to a [compiler bug](https://github.com/rust-lang/rust/issues/64552) as of 2020/03/23 we must box this stream.
-        // The bug occurs due to the compiler erasing certain lifetime bounds in a generator (namely 'static ones) leading to the false
-        // assumption that lifetime 'a: 'static and 'b: 'static do not live as long as each other. This leads to inscrutable error messages.
-        // TODO: Once said issue is resolved remove this allocation.
-        .boxed()
-        .forward(RecordInterface::from_write(out_stream).sink_err_into())
-        .await
+        .forward(sink)
+        .await?;
+
+    Ok(())
 }
 
 pub trait FindFirstLast: Stream + Sized {

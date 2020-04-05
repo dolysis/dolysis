@@ -317,7 +317,7 @@ impl ExecList {
         })
     }
 
-    pub fn get_loads(&self) -> Option<impl Iterator<Item = Load<'_>>> {
+    pub fn get_loaders(&self) -> Option<impl Iterator<Item = Load<'_>>> {
         self.load_r.as_ref().and_then(|&(s, e)| {
             self.inner.get(s..e).map(|sub| {
                 sub.iter()
