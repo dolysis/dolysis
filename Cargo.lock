@@ -738,7 +738,7 @@ dependencies = [
  "serde_cbor",
  "serde_repr",
  "tokio",
- "tokio-serde",
+ "tokio-serde 0.6.1 (git+https://github.com/carllerche/tokio-serde.git)",
  "tokio-util",
 ]
 
@@ -753,7 +753,7 @@ dependencies = [
  "serde_cbor",
  "serde_repr",
  "tokio",
- "tokio-serde",
+ "tokio-serde 0.6.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio-util",
 ]
 
@@ -964,6 +964,21 @@ dependencies = [
 name = "tokio-serde"
 version = "0.6.1"
 source = "git+https://github.com/carllerche/tokio-serde.git#f3c3d69ce049437973468118c9d01b46e0b1ade5"
+dependencies = [
+ "bytes",
+ "derivative",
+ "futures",
+ "pin-project",
+ "serde",
+ "serde_cbor",
+ "serde_json",
+]
+
+[[package]]
+name = "tokio-serde"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ebdd897b01021779294eb09bb3b52b6e11b0747f9f7e333a84bef532b656de99"
 dependencies = [
  "bytes",
  "derivative",
