@@ -269,7 +269,7 @@ async fn handle_output(output_rx: Receiver<LocalRecord>) -> Result<()> {
                 .map(|record| {
                     let mkr = SymmetricalCbor::<Record>::default();
                     pin_mut!(mkr);
-                    Serializer::serialize(mkr, &record).map_err(|e| CrateError::from(e))
+                    Serializer::serialize(mkr, &record).map_err(CrateError::from)
                 })
                 // Due to a [compiler bug](https://github.com/rust-lang/rust/issues/64552) as of 2020/03/23 we must box this stream.
                 // The bug occurs due to the compiler erasing certain lifetime bounds in a generator (namely 'static ones) leading to the false
