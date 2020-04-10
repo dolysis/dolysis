@@ -1,68 +1,44 @@
 use {
     crate::{
         error::CrateError,
-        markers::{DataContext, KindMarker, TagMarker},
-        traits::Marker,
+        markers::{DataContext, TagMarker},
     },
     serde::{
         de::{self, Deserializer, IgnoredAny, MapAccess, Visitor},
         ser::{SerializeMap, Serializer},
         {Deserialize, Serialize},
     },
-    std::fmt,
+    std::{borrow::Cow, fmt},
 };
 
-#[derive(Debug, Serialize)]
-#[serde(tag = "t", content = "c")]
-pub enum RecordKind<R> {
-    #[serde(rename = "ss")]
-    StreamStart,
-    #[serde(rename = "se")]
-    StreamEnd,
-    #[serde(rename = "h")]
-    Header(R),
-    #[serde(rename = "d")]
-    Data(R),
-    #[serde(rename = "l")]
-    Log(R),
-    #[serde(rename = "e")]
-    Error(R),
-}
-
-impl<R> RecordKind<R> {
-    pub fn new<M>(mkr: M, record: R) -> Self
-    where
-        M: Marker<Marker = KindMarker>,
-    {
-        match mkr.as_marker() {
-            KindMarker::StreamStart => Self::StreamStart,
-            KindMarker::StreamEnd => Self::StreamEnd,
-            KindMarker::Header => Self::Header(record),
-            KindMarker::Data => Self::Data(record),
-            KindMarker::Error => Self::Error(record),
-            KindMarker::Log => Self::Log(record),
-        }
-    }
-}
-
+/// The in-memory representation of a Record. This is the mechanism by which the
+/// binaries transmit information across the wire. This struct has an intentionally
+/// minimalistic API. Any manipulation should be done via some local representation,
+/// making use of From/Into (or some similar interface) for moving into and out of
+/// said representation.
+///
+/// As an aside, this structure's Serde impl is optimized for size and _highly_ unlikely
+/// to de/serialize into a valid Record if the data is not serialized *and* deserialized as this struct.
+/// Do not attempt to de/serialize into some intermediary struct. It will end badly.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "t", content = "c")]
-pub enum Record {
+pub enum Record<'i, 'd> {
     #[serde(rename = "ss")]
     StreamStart,
     #[serde(rename = "se")]
     StreamEnd,
     #[serde(rename = "h")]
-    Header(Header),
+    Header(Header<'i>),
     #[serde(rename = "d")]
-    Data(Data),
+    Data(Data<'i, 'd>),
     #[serde(rename = "l")]
     Log(Log),
     #[serde(rename = "e")]
     Error(Error),
 }
 
-impl Record {
+impl<'i, 'd> Record<'i, 'd> {
+    /// Convenience function for generating Record errors
     pub fn new_error<E>(version: u32, err: E) -> Self
     where
         E: Into<CrateError>,
@@ -74,38 +50,45 @@ impl Record {
     }
 }
 
+/// Contains a byte slice and related context. This slice contains some unit of data that is conceptually
+/// whole or 'one' for its intended destination. It should be preceded by _one_ header record, `Context::Start`
+/// and any number of other `Data` records. It should be followed by any number of `Data` records and a single Header `Context::End`
 #[derive(Debug)]
-pub struct Data {
+pub struct Data<'i, 'd> {
     pub required: Common,
     pub time: i64,
-    pub id: String,
+    pub id: Cow<'i, str>,
     pub pid: u32,
     pub cxt: DataContext,
-    pub data: Vec<u8>,
+    pub data: Cow<'d, str>,
 }
 
+/// A header / tail record for gracefully terminating a stream of Data records. Conceptually, it is responsible for starting
+/// and terminating a stream of `Data` records
 #[derive(Debug)]
-pub struct Header {
+pub struct Header<'i> {
     pub required: Common,
     pub time: i64,
-    pub id: String,
+    pub id: Cow<'i, str>,
     pub pid: u32,
     pub cxt: DataContext,
 }
 
+/// Contains any error messages that were caused by an unexpected / non-graceful termination of a project binary
 #[derive(Debug)]
 pub struct Error {
     pub required: Common,
     pub error: CrateError,
 }
 
+/// Contains any log messages that were produced by a project binary up the data stream.
 #[derive(Debug)]
 pub struct Log {
     pub required: Common,
     pub log: String,
 }
 
-/// Contains any records that are common to every record kind
+/// Contains any fields that are common to every record kind
 #[derive(Debug)]
 pub struct Common {
     pub version: u32,
@@ -117,7 +100,7 @@ impl Common {
     }
 }
 
-impl Serialize for Data {
+impl<'i, 'd> Serialize for Data<'i, 'd> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -128,12 +111,12 @@ impl Serialize for Data {
         map.serialize_entry(&TagMarker::Id, &self.id)?;
         map.serialize_entry(&TagMarker::Pid, &self.pid)?;
         map.serialize_entry(&TagMarker::DataContext, &self.cxt)?;
-        map.serialize_entry(&TagMarker::Data, &self.data)?;
+        map.serialize_entry(&TagMarker::Data, self.data.as_ref())?;
         map.end()
     }
 }
 
-impl<'de> Deserialize<'de> for Data {
+impl<'de> Deserialize<'de> for Data<'_, '_> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
@@ -141,7 +124,7 @@ impl<'de> Deserialize<'de> for Data {
         struct DataVisitor;
 
         impl<'de> Visitor<'de> for DataVisitor {
-            type Value = Data;
+            type Value = Data<'static, 'static>;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
                 formatter.write_str("Expecting a valid 'Data' record")
@@ -184,10 +167,14 @@ impl<'de> Deserialize<'de> for Data {
                         version: version.ok_or_else(|| de::Error::missing_field("version"))?,
                     },
                     time: time.ok_or_else(|| de::Error::missing_field("time"))?,
-                    id: id.ok_or_else(|| de::Error::missing_field("id"))?,
+                    id: id
+                        .map(|cow: String| cow.into())
+                        .ok_or_else(|| de::Error::missing_field("id"))?,
                     pid: pid.ok_or_else(|| de::Error::missing_field("pid"))?,
                     cxt: cxt.ok_or_else(|| de::Error::missing_field("cxt"))?,
-                    data: data.ok_or_else(|| de::Error::missing_field("data"))?,
+                    data: data
+                        .map(|cow: String| cow.into())
+                        .ok_or_else(|| de::Error::missing_field("data"))?,
                 })
             }
         }
@@ -197,7 +184,7 @@ impl<'de> Deserialize<'de> for Data {
     }
 }
 
-impl Serialize for Header {
+impl<'i> Serialize for Header<'i> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -212,7 +199,7 @@ impl Serialize for Header {
     }
 }
 
-impl<'de> Deserialize<'de> for Header {
+impl<'de> Deserialize<'de> for Header<'_> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
@@ -220,7 +207,7 @@ impl<'de> Deserialize<'de> for Header {
         struct HeaderVisitor;
 
         impl<'de> Visitor<'de> for HeaderVisitor {
-            type Value = Header;
+            type Value = Header<'static>;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
                 formatter.write_str("Expecting a valid 'Header' record")
@@ -261,7 +248,9 @@ impl<'de> Deserialize<'de> for Header {
                         version: version.ok_or_else(|| de::Error::missing_field("version"))?,
                     },
                     time: time.ok_or_else(|| de::Error::missing_field("time"))?,
-                    id: id.ok_or_else(|| de::Error::missing_field("id"))?,
+                    id: id
+                        .map(|cow: String| cow.into())
+                        .ok_or_else(|| de::Error::missing_field("id"))?,
                     pid: pid.ok_or_else(|| de::Error::missing_field("pid"))?,
                     cxt: cxt.ok_or_else(|| de::Error::missing_field("cxt"))?,
                 })

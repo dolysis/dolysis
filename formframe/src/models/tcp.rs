@@ -8,6 +8,7 @@ use {
         prelude::{CrateResult as Result, *},
     },
     futures::{
+        pin_mut,
         prelude::*,
         ready,
         stream::{Peekable, Stream},
@@ -15,15 +16,19 @@ use {
     },
     once_cell::sync::OnceCell,
     pin_project::pin_project,
-    serde_interface::{Record, RecordInterface},
-    std::collections::HashMap,
+    serde_interface::{Record, RecordFrame, RecordInterface, SymmetricalCbor},
+    std::{collections::HashMap, iter::FromIterator},
     std::{convert::TryFrom, pin::Pin},
     tokio::{
         net::{TcpListener, TcpStream},
-        sync::mpsc::{channel, Receiver, Sender},
+        sync::{
+            broadcast,
+            mpsc::{channel, Receiver, Sender},
+        },
         task::JoinHandle,
         time::Duration,
     },
+    tokio_serde::Serializer,
 };
 
 pub async fn listener(addr: &str) -> Result<()> {
@@ -54,7 +59,8 @@ pub async fn listener(addr: &str) -> Result<()> {
                             let (tx_out, rx_out) = channel::<LocalRecord>(256);
                             let input = handle_connection(socket)
                                 .then(|stream| split_and_join(stream, tx_out))
-                                .instrument(always_span!("con.input"));
+                                .instrument(always_span!("con.input"))
+                                .map(|_| ());
                             let output =
                                 handle_output(rx_out).instrument(always_span!("con.output"));
 
@@ -88,6 +94,7 @@ where
             }),
         })
         .first_last()
+        .inspect(|(first, last, _)| debug!(first, last))
         .take_while(|(first, last, record)| future::ready(match record {
             Record::StreamStart if !first => {
                 error!("Malformed stream, client sent: 'Stream Start' out of sequence... terminating connection");
@@ -238,26 +245,87 @@ where
 }
 
 async fn handle_output(output_rx: Receiver<LocalRecord>) -> Result<()> {
-    let out_stream: Box<dyn tokio::io::AsyncWrite + Unpin + Send> = match cli!()
+    let loaders = cli!()
         .get_exec_list()
-        .get_loads()
-        .and_then(|mut iter| iter.next())
-        .map(|load| TcpStream::connect(load.0))
-    {
-        Some(tcp) => tcp
-            .inspect_err(|e| error!("Could not connect to output: {}", e))
-            .await
-            .ok()
-            .map(|tcp| Box::new(tcp) as Box<dyn tokio::io::AsyncWrite + Unpin + Send>),
-        None => Some(Box::new(tokio::io::sink()) as Box<dyn tokio::io::AsyncWrite + Unpin + Send>),
+        .get_loaders()
+        .map(|iter| {
+            iter.fold(broadcast::channel(256), |(tx, rx), load| {
+                tokio::spawn(
+                    spawn_loader(load.0, rx).instrument(always_span!("loader", addr = load.0)),
+                );
+
+                let new_rx = tx.subscribe();
+                (tx, new_rx)
+            })
+        })
+        .map(|(tx, _)| tx);
+
+    match loaders {
+        Some(tx) => {
+            pin_mut!(tx);
+            stream::once(future::ready(Record::StreamStart))
+                .chain(output_rx.map(|local| local.into()))
+                .chain(stream::once(future::ready(Record::StreamEnd)))
+                .map(|record| {
+                    let mkr = SymmetricalCbor::<Record>::default();
+                    pin_mut!(mkr);
+                    Serializer::serialize(mkr, &record).map_err(CrateError::from)
+                })
+                // Due to a [compiler bug](https://github.com/rust-lang/rust/issues/64552) as of 2020/03/23 we must box this stream.
+                // The bug occurs due to the compiler erasing certain lifetime bounds in a generator (namely 'static ones) leading to the false
+                // assumption that lifetime 'a: 'static and 'b: 'static do not live as long as each other. This leads to inscrutable error messages.
+                // TODO: Once said issue is resolved remove this allocation.
+                .boxed()
+                .try_for_each(|serialized_record| {
+                    future::ready(tx.send(serialized_record)).map(|_| Ok(()))
+                })
+                .await
+        }
+        None => {
+            output_rx
+                .map(|record| -> Record { record.into() })
+                .map(Ok)
+                // See the Some() branch's comment for an explanation
+                .boxed()
+                .forward(RecordInterface::from_write(tokio::io::sink()))
+                .await?;
+
+            Ok(())
+        }
     }
-    .unwrap_or_else(|| Box::new(tokio::io::sink()));
-    stream::once(async { Ok(Record::StreamStart) })
-        .chain(output_rx.map(|local| -> Result<Record> { Ok(local.into()) }))
-        .chain(stream::once(async { Ok(Record::StreamEnd) }))
-        .inspect_ok(|record| debug!("<= {}", record.span_display()))
-        .forward(RecordInterface::from_write(out_stream).sink_err_into())
-        .await
+}
+
+async fn spawn_loader<T>(addr: &'static str, output_rx: broadcast::Receiver<T>) -> Result<()>
+where
+    T: Clone + IntoIterator<Item = u8>,
+{
+    let socket = TcpStream::connect(addr).await?;
+    let sink = RecordFrame::write(socket);
+    output_rx
+        .take_while(|res| match res {
+            Err(e) if *e == broadcast::RecvError::Closed => future::ready(false),
+            _ => future::ready(true),
+        })
+        .filter_map(|res| async {
+            match res {
+                Ok(item) => Some(item),
+                Err(broadcast::RecvError::Lagged(missed)) => {
+                    warn!("Loader is slow, {} records skipped...", missed);
+                    None
+                }
+                _ => None,
+            }
+        })
+        // Note this into_iter / from_iter BS works around dependencies (tokio_serde + tokio_util) not reexporting the version of
+        // [bytes](https://docs.rs/bytes/) they use, leading to version mismatch errors on dependency updates. This "fix" likely has a runtime cost,
+        // but its advantage is that dep updates don't randomly break code.
+        // TODO: raise issues on the deps to properly reexport their public types
+        .map(|item| FromIterator::from_iter(item.into_iter()))
+        .map(Ok)
+        .forward(sink)
+        .await?;
+
+    Ok(())
 }
 
 pub trait FindFirstLast: Stream + Sized {
@@ -272,6 +340,7 @@ where
         FirstLast {
             first: OnceCell::new(),
             inner: self.peekable(),
+            item: None,
         }
     }
 }
@@ -285,9 +354,10 @@ pub struct FirstLast<St>
 where
     St: Stream,
 {
-    first: OnceCell<()>,
     #[pin]
     inner: Peekable<St>,
+    first: OnceCell<()>,
+    item: Option<St::Item>,
 }
 
 impl<St> Stream for FirstLast<St>
@@ -296,14 +366,34 @@ where
 {
     type Item = (bool, bool, St::Item);
 
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let last = ready!(self.as_mut().project().inner.poll_peek(cx)).is_none();
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let mut this = self;
 
-        match ready!(self.as_mut().project().inner.poll_next(cx)) {
-            Some(item) => {
-                let first = self.first.set(()).is_ok();
-                Poll::Ready(Some((first, last, item)))
+        // If we have an item already, don't poll_next, just see if poll_peek is ready
+        if this.item.is_some() {
+            match ready!(this.as_mut().project().inner.poll_peek(cx)).is_none() {
+                last => {
+                    let item = this.as_mut().project().item.take().unwrap();
+                    let first = this.first.set(()).is_ok();
+                    return Poll::Ready(Some((first, last, item)));
+                }
             }
+        }
+
+        // Else get the next item in the stream
+        match ready!(this.as_mut().project().inner.poll_next(cx)) {
+            Some(item) => match this.as_mut().project().inner.poll_peek(cx) {
+                Poll::Pending => {
+                    // If the peek isn't ready, place the current item into local storage
+                    *this.as_mut().project().item = Some(item);
+                    Poll::Pending
+                }
+                Poll::Ready(peek) => {
+                    let last = peek.is_none();
+                    let first = this.first.set(()).is_ok();
+                    Poll::Ready(Some((first, last, item)))
+                }
+            },
             None => Poll::Ready(None),
         }
     }
@@ -320,6 +410,7 @@ where
     fn join_records(self, handle: JoinSetHandle<'_>) -> Join<Self> {
         Join {
             inner: self,
+            overflow: None,
             ongoing: None,
             handle,
         }
@@ -333,6 +424,7 @@ where
 {
     #[pin]
     inner: St,
+    overflow: Option<Data>,
     ongoing: Option<Data>,
     handle: JoinSetHandle<'j>,
 }
@@ -345,6 +437,17 @@ where
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let mut this = self;
+
+        // If the last call had overflow data, return it before polling for the next item
+        if this.overflow.is_some() {
+            return Poll::Ready(
+                this.as_mut()
+                    .project()
+                    .overflow
+                    .take()
+                    .map(LocalRecord::Data),
+            );
+        }
 
         loop {
             match ready!(this.as_mut().project().inner.poll_next(cx)) {
@@ -366,13 +469,13 @@ where
                             // No ongoing join & current record is not a join
                             (false, false) => return Poll::Ready(Some(LocalRecord::Data(data))),
                             // No ongoing join, but the current record IS a join... set it as the ongoing join
-                            (false, true) => {
-                                this.as_mut().project().ongoing.replace(data);
-                            }
+                            (false, true) => *this.as_mut().project().ongoing = Some(data),
                             // Ongoing join, which has now finished because the current record IS NOT a join
                             (true, false) => {
-                                let data = this.project().ongoing.take().map(LocalRecord::Data);
-                                return Poll::Ready(data);
+                                // Put the overflow item in local storage
+                                *this.as_mut().project().overflow = Some(data);
+                                let join = this.project().ongoing.take().map(LocalRecord::Data);
+                                return Poll::Ready(join);
                             }
                             // Ongoing join, which will continue as the current record is a join
                             (true, true) => {
