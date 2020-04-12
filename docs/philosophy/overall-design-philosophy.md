@@ -5,14 +5,18 @@ This is a set of generic design ideals.
 ## Sections
 
 - [Overall Design Philosophy](#overall-design-philosophy)
-  - [Table of Contents](#table-of-contents)
+  - [Sections](#sections)
   - [The Big Three](#the-big-three)
     - [Simple should be Simple](#simple-should-be-simple)
-      - [Example](#example)
-        - [C++](#c)
-        - [Perl](#perl)
     - [Complex should be Possible](#complex-should-be-possible)
     - [Transition must be Easy](#transition-must-be-easy)
+  - [Other Considerations](#other-considerations)
+    - [Working trumps Ideal](#working-trumps-ideal)
+    - [Technical Debt is Real Debt](#technical-debt-is-real-debt)
+    - [You cannot Simply by adding Complexity](#you-cannot-simply-by-adding-complexity)
+    - [Never add a feature you don't need](#never-add-a-feature-you-dont-need)
+    - [It is cheaper to move code than data](#it-is-cheaper-to-move-code-than-data)
+    - [Security debt costs 300% more than regular debt](#security-debt-costs-300-more-than-regular-debt)
 
 ## The Big Three
 
@@ -83,6 +87,10 @@ While it is possible to abstract complexity, this is not simplification. Abstrac
 
 This particularly important for supporting libraries you write. In real terms this means do not add more data abstractions than you need to make your code maintainable.
 
-### It is cheaper to move code than data.
+### It is cheaper to move code than data
 
 Move data as little as possible, and move only the data you need. On the whole integers are better than floats are better than strings. All JSON/YAML/XML is strings.
+
+### Security debt costs 300% more than regular debt
+
+Security done early tends to iron out problems you did not know you had till you try to secure your your code.  Often to properly secure an environment the code structure need to be redesigned.
