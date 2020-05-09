@@ -1,3 +1,3 @@
 [workspace]
-members = [ "formframe", "do-mod", "do-run", "serde_interface" ]
-default-members = [ "formframe", "do-mod", "do-run", "serde_interface" ]
+members = [ "do-fin", "do-mod", "do-run", "serde_interface" ]
+default-members = [ "do-fin", "do-mod", "do-run", "serde_interface" ]
