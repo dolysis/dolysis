@@ -1,29 +1,83 @@
-// For format details, see https://aka.ms/vscode-remote/devcontainer.json or this file's README at:
-// https://github.com/microsoft/vscode-dev-containers/tree/v0.117.0/containers/rust
 {
-	"name": "Rust",
 	"dockerFile": "Dockerfile",
-	"runArgs": [ "--cap-add=SYS_PTRACE", "--security-opt", "seccomp=unconfined" ],
-
-	// Set *default* container specific settings.json values on container create.
-	"settings": { 
-		"terminal.integrated.shell.linux": "/bin/zsh",
-		"lldb.executable": "/usr/bin/lldb"
-	},
-
-	// Add the IDs of extensions you want installed when the container is created.
 	"extensions": [
-		"rust-lang.rust",
+		"HookyQR.beautify",
+		"aaron-bond.better-comments",
 		"bungcip.better-toml",
-		"vadimcn.vscode-lldb"
-	]
-
-	// Use 'forwardPorts' to make a list of ports inside the container available locally.
-	// "forwardPorts": [],
-
-	// Use 'postCreateCommand' to run commands after the container is created.
+		"CoenraadS.bracket-pair-colorizer-2",
+		"ayqy.browser",
+		"magicstack.Chromodynamics",
+		"formulahendry.code-runner",
+		"Shan.code-settings-sync",
+		"mhutchie.git-graph",
+		"donjayamanne.githistory",
+		"eamodio.gitlens",
+		"tintinweb.graphviz-interactive-preview",
+		"geeklearningio.graphviz-markdown-preview",
+		"oderwat.indent-rainbow",
+		"walkme.Java-extension-pack",
+		"wholroyd.jinja",
+		"samuelcolvin.jinjahtml",
+		"dbaeumer.jshint",
+		"magicstack.MagicPython",
+		"yzhang.markdown-all-in-one",
+		"bierner.markdown-checkbox",
+		"bierner.markdown-mermaid",
+		"yzane.markdown-pdf",
+		"AlanWalk.markdown-toc",
+		"PKief.material-icon-theme",
+		"goessner.mdmath",
+		"bodil.prettier-toml",
+		"tanaka-x.prop2yaml",
+		"ms-python.python",
+		"donjayamanne.python-extension-pack",
+		"LouisWT.regexp-preview",
+		"stephen-riley.regexworkbench",
+		"ms-vscode-remote.remote-ssh",
+		"ms-vscode-remote.remote-ssh-edit",
+		"foxundermoon.shell-format",
+		"Tyriar.sort-lines",
+		"jock.svg",
+		"SimonSiefke.svg-preview",
+		"coolbear.systemd-unit-file",
+		"Gruntfuggly.todo-tree",
+		"dakara.transformer",
+		"vscodevim.vim",
+		"sysninja.vscode-ansible-mod",
+		"batisteo.vscode-django",
+		"dbaeumer.vscode-eslint",
+		"firefox-devtools.vscode-firefox-debug",
+		"joaompinto.vscode-graphviz",
+		"NicolasVuillamy.vscode-groovy-lint",
+		"vscjava.vscode-java-debug",
+		"vscjava.vscode-java-dependency",
+		"vscjava.vscode-java-pack",
+		"vscjava.vscode-java-test",
+		"georgewfraser.vscode-javac",
+		"DavidAnson.vscode-markdownlint",
+		"vscjava.vscode-maven",
+		"stefanstranger.vscode-microsoftteams",
+		"fabiospampinato.vscode-projects-plus",
+		"fabiospampinato.vscode-projects-plus-todo-plus",
+		"richie5um2.vscode-sort-json",
+		"vscjava.vscode-spring-initializr",
+		"fabiospampinato.vscode-todo-plus",
+		"pflannery.vscode-versionlens",
+		"redhat.vscode-yaml",
+		"PascalReitermann93.vscode-yaml-sort",
+		"VisualStudioExptTeam.vscodeintellicode"
+	],
+	"forwardPorts": [],
+	"name": "Rust",
 	"postCreateCommand": "rustc --version",
-
-	// Uncomment to connect as a non-root user. See https://aka.ms/vscode-remote/containers/non-root.
-	"remoteUser": "vscode"
+	"remoteUser": "vscode",
+	"runArgs": [
+		"--cap-add=SYS_PTRACE",
+		"--security-opt",
+		"seccomp=unconfined"
+	],
+	"settings": {
+		"lldb.executable": "/usr/bin/lldb",
+		"terminal.integrated.shell.linux": "/bin/zsh"
+	}
 }
