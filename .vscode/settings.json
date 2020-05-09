@@ -80,5 +80,6 @@
         "line-length": false,
         "ul-style": false
     },
-    "prettier.useTabs": false
+    "prettier.useTabs": false,
+    "vim.neovimPath": "nvim"
 }

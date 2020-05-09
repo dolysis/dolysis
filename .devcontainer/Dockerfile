@@ -24,11 +24,10 @@ RUN apt-get update \
     && apt-get -y install git openssh-client less iproute2 procps lsb-release \
     # Added by psox
     && apt-get -y install zsh \
-    && git clone --recurse-submodules --recursive --config http.sslVerify=false https://github.com/psox/psoxizsh.git /etc/psoxizsh
-    && /etc/psoxizsh/fresh-system
+    && git clone --recurse-submodules --recursive --config http.sslVerify=false https://github.com/psox/psoxizsh.git /etc/psoxizsh \
     #
     # Install lldb, vadimcn.vscode-lldb VSCode extension dependencies
-    && apt-get install -y lldb python3-minimal libpython3.7 neovim\
+    && apt-get install -y lldb python3-minimal libpython3.7 neovim \
     #
     # Install Rust components
     && rustup update 2>&1 \
@@ -41,6 +40,7 @@ RUN apt-get update \
     && apt-get install -y sudo \
     && echo $USERNAME ALL=\(root\) NOPASSWD:ALL > /etc/sudoers.d/$USERNAME\
     && chmod 0440 /etc/sudoers.d/$USERNAME \
+    && su - vscode -c /etc/psoxizsh/fresh-system \
     #
     # Clean up
     && apt-get autoremove -y \
