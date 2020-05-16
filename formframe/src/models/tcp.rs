@@ -20,7 +20,7 @@ use {
     std::{collections::HashMap, iter::FromIterator},
     std::{convert::TryFrom, pin::Pin},
     tokio::{
-        net::{TcpListener, TcpStream},
+        net::{TcpListener, TcpStream, ToSocketAddrs},
         sync::{
             broadcast,
             mpsc::{channel, Receiver, Sender},
@@ -31,9 +31,7 @@ use {
     tokio_serde::Serializer,
 };
 
-pub async fn listener(addr: &str) -> Result<()> {
-    debug!("Listener is attempt to bind {}", addr);
-
+pub async fn listener(addr: impl ToSocketAddrs) -> Result<()> {
     let mut listener = TcpListener::bind(addr)
         .inspect_ok(|tcp| {
             tcp.local_addr()
@@ -371,13 +369,10 @@ where
 
         // If we have an item already, don't poll_next, just see if poll_peek is ready
         if this.item.is_some() {
-            match ready!(this.as_mut().project().inner.poll_peek(cx)).is_none() {
-                last => {
-                    let item = this.as_mut().project().item.take().unwrap();
-                    let first = this.first.set(()).is_ok();
-                    return Poll::Ready(Some((first, last, item)));
-                }
-            }
+            let last = ready!(this.as_mut().project().inner.poll_peek(cx)).is_none();
+            let item = this.as_mut().project().item.take().unwrap();
+            let first = this.first.set(()).is_ok();
+            return Poll::Ready(Some((first, last, item)));
         }
 
         // Else get the next item in the stream

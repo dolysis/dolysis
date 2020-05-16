@@ -11,7 +11,6 @@ use {
     std::{
         convert::{TryFrom, TryInto},
         fs::File,
-        net::ToSocketAddrs,
         path::Path,
     },
 };
@@ -44,22 +43,32 @@ pub fn generate_cli<'a, 'b>() -> App<'a, 'b> {
             .about("Listen on tcp")
             .arg(
                 Arg::with_name("tcp-addr")
-                .takes_value(false)
-                .value_name("HOST:PORT")
-                .default_value("localhost:8080")
-                .validator(|val| {
-                    val.as_str().to_socket_addrs()
-                        .map(|_| ())
-                        .map_err(|e| format!("Unable to resolve '{}': {}", val, e))
-                    }
-                )
-                .help("Hostname/IP & Port to listen on")
+                .short("b")
+                .long("bind")
+                .value_names(&["HOST", "IP"])
+                .default_value("0.0.0.0")
+                .hide_default_value(true)
+                .help("Bind the given address, defaulting to all available")
             )
+            .arg(
+                Arg::with_name("tcp_port")
+                    .takes_value(false)
+                    .short("p")
+                    .long("port")
+                    .value_name("PORT")
+                    .default_value("49999")
+                    .validator(|val| {
+                        val.parse::<u16>()
+                            .map(|_| ())
+                            .map_err(|_| format!("'{}' is not a valid port", &val))
+                    })
+                    .help("On the given port"),
+            ),
         )
 }
 
 pub struct ProgramArgs {
-    bind: String,
+    bind: (String, u16),
     filter: FilterSet,
     join: JoinSet,
     exec: ExecList,
@@ -78,8 +87,15 @@ impl ProgramArgs {
     fn __try_init(cli: App<'_, '_>) -> Result<Self> {
         let store = cli.get_matches();
 
-        let bind: String = match store.subcommand() {
-            ("tcp", Some(store)) => store.value_of("tcp-addr").unwrap().to_string(),
+        let bind = match store.subcommand() {
+            ("tcp", Some(sub)) => {
+                let bind = sub.value_of("tcp-addr").unwrap().into();
+                let port = sub
+                    .value_of("tcp_port")
+                    .map(|s| s.parse::<u16>().unwrap())
+                    .unwrap();
+                (bind, port)
+            }
             _ => unreachable!("No subcommand selected... this is a bug"),
         };
 
@@ -108,8 +124,8 @@ impl ProgramArgs {
         &self.exec
     }
 
-    pub fn bind_addr(&self) -> &str {
-        &self.bind
+    pub fn bind_addr(&self) -> (&str, u16) {
+        (&self.bind.0, self.bind.1)
     }
 }
 
