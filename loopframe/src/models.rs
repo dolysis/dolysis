@@ -3,7 +3,7 @@ use {
     futures::prelude::*,
     serde_interface::RecordInterface,
     serde_json::{to_writer, to_writer_pretty},
-    std::{io, net::SocketAddr, path::Path},
+    std::{io, path::Path},
     tokio::{net::TcpListener, prelude::AsyncRead},
     tracing_subscriber::{EnvFilter, FmtSubscriber},
 };

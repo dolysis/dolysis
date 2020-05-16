@@ -1,11 +1,7 @@
 #![allow(deprecated)]
 use {
     clap::{crate_authors, crate_version, App, Arg, SubCommand},
-    std::{
-        net::{IpAddr, SocketAddr},
-        path::{Path, PathBuf},
-        str::FromStr,
-    },
+    std::path::{Path, PathBuf},
 };
 
 #[cfg(unix)]
