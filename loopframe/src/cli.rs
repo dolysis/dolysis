@@ -47,7 +47,7 @@ fn __generate_cli<'a, 'b>() -> App<'a, 'b> {
                     Arg::with_name("tcp_addr")
                         .short("b")
                         .long("bind")
-                        .value_names(&["HOST", "IP"])
+                        .value_name("HOST / IP")
                         .default_value("0.0.0.0")
                         .hide_default_value(true)
                         .help("Bind the given address, defaulting to all available"),

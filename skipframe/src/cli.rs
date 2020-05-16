@@ -46,7 +46,7 @@ fn __generate_cli<'a, 'b>() -> App<'a, 'b> {
                 .about("Use a tcp socket for output")
                 .arg(
                     Arg::with_name("tcp_addr")
-                        .value_names(&["HOST", "IP"])
+                        .value_name("HOST / IP")
                         .required(true)
                         .help("Connect to the given host"),
                 )
