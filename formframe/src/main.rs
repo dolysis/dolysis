@@ -70,6 +70,6 @@ fn main() -> MainResult<()> {
 async fn try_main() -> Result<()> {
     let addr = cli!().bind_addr();
     listener(addr)
-        .instrument(always_span!("listener.tcp", bind = addr))
+        .instrument(always_span!("listener.tcp", bind = addr.0, port = addr.1))
         .await
 }

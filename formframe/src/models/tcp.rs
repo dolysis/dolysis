@@ -20,7 +20,7 @@ use {
     std::{collections::HashMap, iter::FromIterator},
     std::{convert::TryFrom, pin::Pin},
     tokio::{
-        net::{TcpListener, TcpStream},
+        net::{TcpListener, TcpStream, ToSocketAddrs},
         sync::{
             broadcast,
             mpsc::{channel, Receiver, Sender},
@@ -31,9 +31,7 @@ use {
     tokio_serde::Serializer,
 };
 
-pub async fn listener(addr: &str) -> Result<()> {
-    debug!("Listener is attempt to bind {}", addr);
-
+pub async fn listener(addr: impl ToSocketAddrs) -> Result<()> {
     let mut listener = TcpListener::bind(addr)
         .inspect_ok(|tcp| {
             tcp.local_addr()
