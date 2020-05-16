@@ -1,11 +1,7 @@
 #![allow(deprecated)]
 use {
     clap::{crate_authors, crate_version, App, Arg, SubCommand},
-    std::{
-        net::{IpAddr, SocketAddr},
-        path::{Path, PathBuf},
-        str::FromStr,
-    },
+    std::path::{Path, PathBuf},
 };
 
 #[cfg(unix)]
@@ -50,21 +46,14 @@ fn __generate_cli<'a, 'b>() -> App<'a, 'b> {
                 .about("Use a tcp socket for output")
                 .arg(
                     Arg::with_name("tcp_addr")
-                        .takes_value(false)
-                        .value_names(&["IPV4", "IPV6"])
-                        .default_value("127.0.0.1")
-                        .validator(|val| {
-                            IpAddr::from_str(val.as_str())
-                                .map(|_| ())
-                                .map_err(|e| format!("'{}' is an {}", val, e))
-                        })
-                        .help("Connect to the given IP"),
+                        .value_names(&["HOST", "IP"])
+                        .required(true)
+                        .help("Connect to the given host"),
                 )
                 .arg(
                     Arg::with_name("tcp_port")
-                        .takes_value(false)
                         .value_name("PORT")
-                        .default_value("50000")
+                        .default_value("49999")
                         .validator(|val| {
                             val.parse::<u16>()
                                 .map(|_| ())
@@ -94,12 +83,12 @@ impl ProgramArgs {
                     ConOpts::UnixSocket(PathBuf::from(sub.value_of("socket_connect").unwrap()))
             }
             ("tcp", Some(sub)) => {
-                let ip = IpAddr::from_str(sub.value_of("tcp_addr").unwrap()).unwrap();
+                let bind = sub.value_of("tcp_addr").unwrap().into();
                 let port = sub
                     .value_of("tcp_port")
                     .map(|s| s.parse::<u16>().unwrap())
                     .unwrap();
-                con_type = ConOpts::Tcp(SocketAddr::new(ip, port))
+                con_type = ConOpts::Tcp((bind, port))
             }
             _ => con_type = ConOpts::default(),
         }
@@ -117,9 +106,9 @@ impl ProgramArgs {
 
     /// If the user selected a TCP stream, returns the address.
     /// Guaranteed to be Some if con_socket() and con_stdout() are None
-    pub(crate) fn con_tcp(&self) -> Option<SocketAddr> {
+    pub(crate) fn con_tcp(&self) -> Option<(&str, u16)> {
         match self.con_type {
-            ConOpts::Tcp(addr) => Some(addr),
+            ConOpts::Tcp((ref bind, port)) => Some((bind, port)),
             _ => None,
         }
     }
@@ -153,7 +142,7 @@ impl ProgramArgs {
 /// Possible output streams
 enum ConOpts {
     Stdout,
-    Tcp(SocketAddr),
+    Tcp((String, u16)),
     UnixSocket(PathBuf),
 }
 
