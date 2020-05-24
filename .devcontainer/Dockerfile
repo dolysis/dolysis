@@ -42,6 +42,7 @@ RUN apt-get update \
     && chmod 0440 /etc/sudoers.d/$USERNAME \
     && su - vscode -c /etc/psoxizsh/fresh-system \
     && yarnpkg global add npm \
+    && yarnpkg global add jshint \
     #
     # Clean up
     && apt-get autoremove -y \
