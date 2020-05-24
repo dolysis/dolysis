@@ -68,7 +68,10 @@
 		"walkme.Java-extension-pack",
 		"wholroyd.jinja",
 		"yzane.markdown-pdf",
-		"yzhang.markdown-all-in-one"
+		"yzhang.markdown-all-in-one",
+		"coenraads.bracket-pair-colorizer-2",
+		"pkief.material-icon-theme",
+		"shan.code-settings-sync"
 	],
 	"forwardPorts": [],
 	"name": "Rust",
