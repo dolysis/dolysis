@@ -1,3 +1,3 @@
 [workspace]
-members = [ "do-fin", "do-mod", "do-run", "serde_interface" ]
-default-members = [ "do-fin", "do-mod", "do-run", "serde_interface" ]
+members = [ "do-fin", "do-mod", "do-run", "lib-serde" ]
+default-members = [ "do-fin", "do-mod", "do-run", "lib-serde" ]

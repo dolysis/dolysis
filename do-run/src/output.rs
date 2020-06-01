@@ -1,7 +1,7 @@
 use {
     crate::prelude::*,
     arrayvec::ArrayVec,
-    serde_interface::{Common, Data, DataContext, Header, Record},
+    lib_serde::{Common, Data, DataContext, Header, Record},
     std::{fmt, sync::Arc},
 };
 

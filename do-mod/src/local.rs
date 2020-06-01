@@ -1,6 +1,6 @@
 use {
     serde::{Deserialize, Serialize},
-    serde_interface::{
+    lib_serde::{
         Common as RecordCommon, Data as RecordData, DataContext, Error as RecordError,
         Header as RecordHeader, InterfaceError, Log as RecordLog, Record,
     },
