@@ -13,5 +13,5 @@ tokio-util = { version = "0.3.1", features = ["codec"] }
 tokio = { version = "0.2.21", features = [] }
 tokio-serde = { version = "0.6.1", features = ["cbor", "json"] }
 bytes = "0.5.4"
-pin-project = "0.4.17"
+pin-project = "0.4.20"
 
