@@ -1,6 +1,6 @@
 use {
     crate::{error::MainResult, prelude::*, ARGS},
-    serde_interface::{
+    lib_serde::{
         Common, Data as RecordData, DataContext as RecordContext, Header as RecordHeader, Record,
     },
     std::{

@@ -14,9 +14,9 @@ use {
         stream::{Peekable, Stream},
         task::{Context, Poll},
     },
+    lib_serde::{Record, RecordFrame, RecordInterface, SymmetricalCbor},
     once_cell::sync::OnceCell,
     pin_project::pin_project,
-    serde_interface::{Record, RecordFrame, RecordInterface, SymmetricalCbor},
     std::{collections::HashMap, iter::FromIterator},
     std::{convert::TryFrom, pin::Pin},
     tokio::{

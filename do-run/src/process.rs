@@ -8,7 +8,7 @@ use {
     chrono::Utc,
     crossbeam_channel::Sender,
     futures::{channel::mpsc::Sender as AsyncSender, executor::block_on, prelude::*},
-    serde_interface::{DataContext, RecordInterface},
+    lib_serde::{DataContext, RecordInterface},
     std::{
         io,
         path::Path,

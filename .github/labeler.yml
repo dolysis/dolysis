@@ -1,14 +1,14 @@
-"@formframe":
-  - "formframe/**/*"
+"@do-fin":
+  - "do-fin/**/*"
 
-"@skipframe":
-  - "skipframe/**/*"
+"@do-run":
+  - "do-run/**/*"
 
-"@loopframe":
-  - "loopframe/**/*"
+"@do-mod":
+  - "do-mod/**/*"
 
-"@interface":
-  - "serde_interface/**/*"
+"@lib-serde":
+  - "lib-serde/**/*"
 
 dep-change:
   - "*/**/Cargo.lock"
@@ -18,3 +18,7 @@ workflow:
 
 documents:
   - "docs/**/*"
+
+examples:
+  - "examples/**/*"
+

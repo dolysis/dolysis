@@ -27,6 +27,9 @@
         "Iterator's",
         "Peekable",
         "Transcodes",
+        "autoclean",
+        "autocmd",
+        "bincache",
         "bstr",
         "cbor",
         "chmod",
@@ -55,7 +58,9 @@
         "rcxt",
         "repr",
         "serde",
+        "setlocal",
         "skipframe",
+        "spelllang",
         "strs",
         "subcommand",
         "symlinks",
@@ -71,9 +76,10 @@
     "markdown.extension.toc.orderedList": false,
     "markdown.extension.toc.updateOnSave": true,
     "markdownlint.config": {
-        "line-length": false,
-        "ul-style": false,
         "code": "fenced",
+        "line-length": false,
+        "ul-style": false
     },
     "prettier.useTabs": false,
+    "vim.neovimPath": "nvim"
 }

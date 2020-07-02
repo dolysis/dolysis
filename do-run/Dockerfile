@@ -1,5 +1,5 @@
 ARG BuildImage=ekidd/rust-musl-builder:stable
-ARG BinName=loopframe
+ARG BinName=do-run
 
 # Build
 FROM $BuildImage AS Build
@@ -10,8 +10,6 @@ RUN cargo build --release
 FROM alpine:3
 ARG BinName
 
-RUN echo $BinName
-
 LABEL "project.namespace"="dolysis" "dolysis.binary"=$BinName
 
 WORKDIR /home/$BinName
@@ -19,4 +17,4 @@ COPY --from=Build \
     /home/rust/src/target/x86_64-unknown-linux-musl/release/$BinName \
     .
 
-ENTRYPOINT ["./loopframe"]
+ENTRYPOINT ["./do-run"]
