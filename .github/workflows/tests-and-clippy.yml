@@ -15,10 +15,10 @@ jobs:
     # Required while project is private, otherwise local dep checkouts will fail
     - name: Set git auth
       run: git config --global url."https://api:${{ secrets.GITHUB_TOKEN }}@github.com/".insteadOf "https://github.com/"
-    
+
     - name: Code checkout
       uses: actions/checkout@v2
-    
+
     # Attempt to draw from a two phase cache
     - name: Cache .cargo binaries
       id: bincache
@@ -27,7 +27,7 @@ jobs:
         path: ~/.cargo/bin
         key: ${{ runner.os }}-cargo-bin-${{ env.ci_bin_list }}
       env:
-        ci_bin_list: "cache"  
+        ci_bin_list: "cache"
 
     - name: Cache .cargo registry
       uses: actions/cache@v1
@@ -35,7 +35,7 @@ jobs:
       with:
         path: ~/.cargo/registry
         key: ${{ runner.os }}-cargo-registry-${{ hashFiles('*/**/Cargo.lock') }}
-    
+
     - name: Cache .cargo git
       uses: actions/cache@v1
       if: steps.bincache.outputs.cache-hit == 'true'
@@ -46,16 +46,16 @@ jobs:
     # Testing
     - name: Format check
       run: cargo fmt -- -l --check
-    
+
     - name: Clippy check
       run: cargo clippy -- -D warnings
-    
+
     - name: Build
       run: cargo build
-    
+
     - name: Run tests
       run: cargo test
-    
+
     - name: Cleanup cache
       run: |
         cargo cache || cargo install cargo-cache --no-default-features --features ci-autoclean cargo-cache && cargo cache
