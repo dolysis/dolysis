@@ -7,8 +7,8 @@
 "@do-mod":
   - "do-mod/**/*"
 
-"@interface":
-  - "serde_interface/**/*"
+"@lib-serde":
+  - "lib-serde/**/*"
 
 dep-change:
   - "*/**/Cargo.lock"
