@@ -38,7 +38,7 @@ fn __generate_cli<'a, 'b>() -> App<'a, 'b> {
             Arg::with_name("exec_root")
                 .takes_value(false)
                 .value_name("PATH")
-                .default_value(".")
+                .required(true)
                 .help("Point at directory root of files to execute"),
         )
         .subcommand(
