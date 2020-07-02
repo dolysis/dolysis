@@ -202,7 +202,7 @@ pub async fn write_select(rx_writer: AsyncReceiver<WriteChannel>) -> Result<()> 
                     .and_then(|socket| write_cbor(rx_writer, socket))
                     .await
             }
-            .instrument(always_span!("tcp", socket = %addr))
+            .instrument(always_span!("tcp", bind = %addr.0, port = addr.1))
             .await
         }
         (_, _, Some(_)) => {

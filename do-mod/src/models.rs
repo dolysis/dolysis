@@ -3,7 +3,7 @@ use {
     futures::prelude::*,
     lib_serde::RecordInterface,
     serde_json::{to_writer, to_writer_pretty},
-    std::{io, net::SocketAddr, path::Path},
+    std::{io, path::Path},
     tokio::{net::TcpListener, prelude::AsyncRead},
     tracing_subscriber::{EnvFilter, FmtSubscriber},
 };
@@ -23,7 +23,7 @@ pub async fn process_incoming() -> Result<(), io::Error> {
         }
         (_, Some(addr)) => {
             use_tcp(addr)
-                .instrument(always_span!("server.tcp", socket = %addr))
+                .instrument(always_span!("server.tcp", bind = %addr.0, port = addr.1))
                 .await
         }
         _ => unreachable!(),
@@ -62,12 +62,12 @@ async fn use_unixsocket(socket: &Path) -> Result<(), io::Error> {
     }
 }
 
-async fn use_tcp(addr: SocketAddr) -> Result<(), io::Error> {
-    debug!("Attempting to bind {}...", addr);
+async fn use_tcp(addr: (&str, u16)) -> Result<(), io::Error> {
+    debug!("Attempting to bind {}:{}...", addr.0, addr.1);
     let mut listener = TcpListener::bind(addr)
         .inspect(|status| match status {
             Ok(_) => info!("Bind successful, server is waiting on connections"),
-            Err(_) => error!("Binding {} failed... bailing", addr),
+            Err(_) => error!("Binding {}:{} failed... bailing", addr.0, addr.1),
         })
         .await?;
 

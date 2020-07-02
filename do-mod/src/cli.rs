@@ -1,11 +1,7 @@
 #![allow(deprecated)]
 use {
     clap::{crate_authors, crate_version, App, AppSettings, Arg, SubCommand},
-    std::{
-        net::{IpAddr, SocketAddr},
-        path::{Path, PathBuf},
-        str::FromStr,
-    },
+    std::path::{Path, PathBuf},
 };
 
 #[cfg(unix)]
@@ -42,26 +38,24 @@ fn __generate_cli<'a, 'b>() -> App<'a, 'b> {
             Arg::with_name("json_pretty")
                 .takes_value(false)
                 .long("pretty")
-                .help("Print pretty json"),
+                .help("Pretty print json"),
         )
         .subcommand(
             SubCommand::with_name("tcp")
                 .about("Bind a tcp socket for output")
                 .arg(
                     Arg::with_name("tcp_addr")
-                        .takes_value(false)
-                        .value_names(&["IPV4", "IPV6"])
-                        .default_value("127.0.0.1")
-                        .validator(|val| {
-                            IpAddr::from_str(val.as_str())
-                                .map(|_| ())
-                                .map_err(|e| format!("'{}' is an {}", val, e))
-                        })
-                        .help("Bind to the given IP"),
+                        .short("b")
+                        .long("bind")
+                        .value_name("HOST / IP")
+                        .default_value("0.0.0.0")
+                        .hide_default_value(true)
+                        .help("Bind the given address, defaulting to all available"),
                 )
                 .arg(
                     Arg::with_name("tcp_port")
-                        .takes_value(false)
+                        .short("p")
+                        .long("port")
                         .value_name("PORT")
                         .default_value("50000")
                         .validator(|val| {
@@ -92,12 +86,12 @@ impl ProgramArgs {
                     ConOpts::UnixSocket(PathBuf::from(sub.value_of("socket_connect").unwrap()))
             }
             ("tcp", Some(sub)) => {
-                let ip = IpAddr::from_str(sub.value_of("tcp_addr").unwrap()).unwrap();
+                let bind = sub.value_of("tcp_addr").unwrap().into();
                 let port = sub
                     .value_of("tcp_port")
                     .map(|s| s.parse::<u16>().unwrap())
                     .unwrap();
-                con_type = ConOpts::Tcp(SocketAddr::new(ip, port))
+                con_type = ConOpts::Tcp((bind, port))
             }
             _ => unreachable!(),
         }
@@ -112,9 +106,9 @@ impl ProgramArgs {
         self.pretty_print
     }
 
-    pub(crate) fn con_tcp(&self) -> Option<SocketAddr> {
+    pub(crate) fn con_tcp(&self) -> Option<(&str, u16)> {
         match self.con_type {
-            ConOpts::Tcp(addr) => Some(addr),
+            ConOpts::Tcp((ref bind, port)) => Some((bind, port)),
             _ => None,
         }
     }
@@ -134,7 +128,7 @@ impl ProgramArgs {
 #[derive(Debug, Clone)]
 #[cfg(unix)]
 enum ConOpts {
-    Tcp(SocketAddr),
+    Tcp((String, u16)),
     UnixSocket(PathBuf),
 }
 

@@ -75,13 +75,13 @@ pub fn process_child(
 
         Ok(())
     };
-    match body() {
-        defer => tx_child
-            .send(handle)
-            .map_err(|e| e.into())
-            .and_then(|_| defer)
-            .log(Level::ERROR),
-    }
+    let defer = body();
+
+    tx_child
+        .send(handle)
+        .map_err(|e| e.into())
+        .and_then(|_| defer)
+        .log(Level::ERROR)
 }
 
 /// Serializes a child's output and sends it to
