@@ -1,5 +1,5 @@
 ARG BuildImage=ekidd/rust-musl-builder:stable
-ARG BinName=skipframe
+ARG BinName=do-run
 
 # Build
 FROM $BuildImage AS Build
@@ -17,4 +17,4 @@ COPY --from=Build \
     /home/rust/src/target/x86_64-unknown-linux-musl/release/$BinName \
     .
 
-ENTRYPOINT ["./skipframe"]
+ENTRYPOINT ["./do-run"]
