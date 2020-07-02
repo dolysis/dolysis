@@ -13,8 +13,8 @@ use {
         io::Cursor,
         prelude::*,
     },
-    rayon::{iter::ParallelBridge, prelude::*},
     lib_serde::{Record, RecordFrame, RecordInterface},
+    rayon::{iter::ParallelBridge, prelude::*},
     std::{
         convert::TryFrom, fmt, marker::Unpin, os::unix::fs::PermissionsExt, path::Path,
         process::Child, thread,

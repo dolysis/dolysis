@@ -1,9 +1,9 @@
 use {
-    serde::{Deserialize, Serialize},
     lib_serde::{
         Common as RecordCommon, Data as RecordData, DataContext, Error as RecordError,
         Header as RecordHeader, InterfaceError, Log as RecordLog, Record,
     },
+    serde::{Deserialize, Serialize},
 };
 #[derive(Debug, Serialize, Deserialize)]
 pub(super) enum LocalRecord {
