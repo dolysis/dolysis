@@ -1,5 +1,5 @@
 [package]
-name = "do-fin"
+name = "transform"
 version = "0.2.3"
 authors = ["pSox <psox(at)st8l.com>"]
 edition = "2018"

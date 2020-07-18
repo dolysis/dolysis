@@ -1,14 +1,14 @@
-"@do-fin":
-  - "do-fin/**/*"
+"@transform":
+  - "transform/**/*"
 
-"@do-run":
-  - "do-run/**/*"
+"@extract":
+  - "extract/**/*"
 
-"@do-mod":
-  - "do-mod/**/*"
+"@load":
+  - "load/**/*"
 
-"@lib-serde":
-  - "lib-serde/**/*"
+"@lib-transport":
+  - "lib-transport/**/*"
 
 dep-change:
   - "*/**/Cargo.lock"

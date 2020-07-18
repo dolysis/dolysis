@@ -5,8 +5,8 @@ FROM $BuildImage AS Build
 ADD --chown=rust:rust . ./
 RUN cargo build --release
 
-FROM alpine:3 AS do-fin 
-ARG BinName=do-fin
+FROM alpine:3 AS transform 
+ARG BinName=transform
 
 RUN echo building ${BinName}
 LABEL "project.namespace"="dolysis" 
@@ -17,8 +17,8 @@ COPY --from=Build /home/rust/src/target/x86_64-unknown-linux-musl/release/${BinN
 
 ENTRYPOINT [./${BinName}]
 
-FROM alpine:3 AS do-run
-ARG BinName=do-run
+FROM alpine:3 AS extract
+ARG BinName=extract
 
 RUN echo building ${BinName}
 LABEL "project.namespace"="dolysis" 
@@ -29,8 +29,8 @@ COPY --from=Build /home/rust/src/target/x86_64-unknown-linux-musl/release/${BinN
 
 ENTRYPOINT [./${BinName}]
 
-FROM alpine:3 AS do-mod
-ARG BinName=do-mod
+FROM alpine:3 AS load
+ARG BinName=load
 
 RUN echo building ${BinName}
 LABEL "project.namespace"="dolysis"
