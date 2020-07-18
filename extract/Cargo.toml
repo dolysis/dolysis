@@ -1,5 +1,5 @@
 [package]
-name = "do-run"
+name = "extract"
 version = "0.2.2"
 authors = ["pSox <psox(at)st8l.com>"]
 edition = "2018"

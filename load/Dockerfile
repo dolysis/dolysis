@@ -1,5 +1,5 @@
 ARG BuildImage=ekidd/rust-musl-builder:stable
-ARG BinName=do-mod
+ARG BinName=load
 
 # Build
 FROM $BuildImage AS Build
@@ -19,4 +19,4 @@ COPY --from=Build \
     /home/rust/src/target/x86_64-unknown-linux-musl/release/$BinName \
     .
 
-ENTRYPOINT ["./do-mod"]
+ENTRYPOINT ["./load"]
