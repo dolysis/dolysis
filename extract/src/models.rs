@@ -13,7 +13,7 @@ use {
         io::Cursor,
         prelude::*,
     },
-    lib_serde::{Record, RecordFrame, RecordInterface},
+    lib_transport::{Record, RecordFrame, RecordInterface},
     rayon::{iter::ParallelBridge, prelude::*},
     std::{
         convert::TryFrom, fmt, marker::Unpin, os::unix::fs::PermissionsExt, path::Path,

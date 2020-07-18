@@ -1,6 +1,6 @@
 use {
     crate::{load::error::LoadError, models::SpanDisplay, prelude::*},
-    lib_serde::DataContext as RecordContext,
+    lib_transport::DataContext as RecordContext,
     std::{error, fmt, io::Error as IoError, string::FromUtf8Error},
     thiserror::Error,
 };

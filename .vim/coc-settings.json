@@ -1,0 +1,20 @@
+{
+  "cSpell.words": [
+    "AND's",
+    "Addrs",
+    "Cbor",
+    "Repr",
+    "bstr",
+    "clippy",
+    "executables",
+    "fctl",
+    "iterator's",
+    "nanos",
+    "rcxt"
+  ],
+  "rust-analyzer.lens.enable": true,
+  "rust-analyzer.lens.implementations": true,
+  "rust-analyzer.checkOnSave.enable": true,
+  "rust-analyzer.inlayHints.refreshOnInsertMode": false,
+  "cSpell.allowCompoundWords": true
+}

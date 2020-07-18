@@ -118,10 +118,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cli"
-version = "0.1.0"
-
-[[package]]
 name = "crossbeam-channel"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -189,6 +185,10 @@ dependencies = [
  "quote",
  "syn",
 ]
+
+[[package]]
+name = "dolysis"
+version = "0.1.0"
 
 [[package]]
 name = "dtoa"

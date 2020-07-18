@@ -1,5 +1,5 @@
 [package]
-name = "cli"
+name = "dolysis"
 version = "0.1.0"
 authors = ["pSox <psox(at)st8l.com>"]
 edition = "2018"
