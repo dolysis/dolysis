@@ -1,8 +1,9 @@
 [package]
-name = "lib-serde"
+name = "lib-transport"
 version = "0.4.1"
-authors = ["pSox <psox@st8l.com>"]
+authors = ["pSox <psox(at)st8l.com>"]
 edition = "2018"
+license = "MIT OR Apache-2.0"
 
 [dependencies]
 serde = { version = "1.0.114", features = ["derive"] }
