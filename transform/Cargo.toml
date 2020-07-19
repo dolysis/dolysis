@@ -27,4 +27,5 @@ tracing-subscriber = "0.2.6"
 tracing-futures = "0.2.4"
 
 # Local repo
-lib-serde = {path = "../lib-serde" }  
+lib-transport = { path = "../lib-transport" }
+

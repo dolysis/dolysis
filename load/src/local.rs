@@ -1,5 +1,5 @@
 use {
-    lib_serde::{
+    lib_transport::{
         Common as RecordCommon, Data as RecordData, DataContext, Error as RecordError,
         Header as RecordHeader, InterfaceError, Log as RecordLog, Record,
     },

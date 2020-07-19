@@ -14,7 +14,7 @@ use {
         stream::{Peekable, Stream},
         task::{Context, Poll},
     },
-    lib_serde::{Record, RecordFrame, RecordInterface, SymmetricalCbor},
+    lib_transport::{Record, RecordFrame, RecordInterface, SymmetricalCbor},
     once_cell::sync::OnceCell,
     pin_project::pin_project,
     std::{collections::HashMap, iter::FromIterator},
