@@ -10,6 +10,7 @@ use {
     tracing_subscriber::{EnvFilter, FmtSubscriber},
 };
 
+mod extensions;
 pub mod tcp;
 
 /// Initialize the global logger. This function must be called before ARGS is initialized,

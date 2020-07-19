@@ -28,4 +28,3 @@ tracing-futures = "0.2.4"
 
 # Local repo
 lib-transport = { path = "../lib-transport" }
-
