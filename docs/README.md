@@ -1,12 +1,10 @@
-# Look, Read, Click, Drool and Rant
+# Look, Read, Click, Drool and Rant <!-- omit in toc -->
 
-## Table of Contents
+## Table of Contents <!-- omit in toc -->
 
-- [Look, Read, Click, Drool and Rant](#look-read-click-drool-and-rant)
-  - [Table of Contents](#table-of-contents)
-  - [Shorts](#shorts)
-  - [Technical](#technical)
-  - [Philosophy](#philosophy)
+- [Shorts](#shorts)
+- [Technical](#technical)
+- [Philosophy](#philosophy)
 
 ## Shorts
 
