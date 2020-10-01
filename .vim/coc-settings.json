@@ -6,6 +6,7 @@
     "Repr",
     "bstr",
     "clippy",
+    "dedup",
     "executables",
     "fctl",
     "iterator's",
@@ -16,5 +17,8 @@
   "rust-analyzer.lens.implementations": true,
   "rust-analyzer.checkOnSave.enable": true,
   "rust-analyzer.inlayHints.refreshOnInsertMode": false,
-  "cSpell.allowCompoundWords": true
+  "cSpell.allowCompoundWords": true,
+  "markdownlint.config": {
+    "MD010": true
+  }
 }

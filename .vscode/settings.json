@@ -81,5 +81,6 @@
         "ul-style": false
     },
     "prettier.useTabs": false,
-    "vim.neovimPath": "nvim"
+    "vim.neovimPath": "nvim",
+    "remote.WSL.debug": true
 }
